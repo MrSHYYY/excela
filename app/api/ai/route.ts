@@ -1,5 +1,6 @@
 import { ApiError, GoogleGenAI } from "@google/genai";
 import { academicExtractionInstruction } from "@/ai/instructions";
+import { getSessionUser } from "@/lib/auth";
 
 const fields = ["course", "title", "date"] as const;
 type AcademicEvent = Record<(typeof fields)[number], string>;
@@ -10,6 +11,15 @@ function isAcademicEvent(value: unknown): value is AcademicEvent {
 }
 
 export async function POST(request: Request) {
+  // Only signed-in users can spend AI credits.
+  try {
+    if (!(await getSessionUser())) {
+      return Response.json({ error: "Sign in with Google to use Excela.", code: "auth" }, { status: 401 });
+    }
+  } catch {
+    return Response.json({ error: "Could not reach the database. Please try again." }, { status: 503 });
+  }
+
   let body: unknown;
 
   try {

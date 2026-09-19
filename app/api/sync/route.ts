@@ -1,4 +1,6 @@
-import { googleAccessToken } from "@/ai/google-auth";
+import { GoogleAccessError, googleAccessToken } from "@/ai/google-auth";
+import { getSessionUser, isSameOrigin } from "@/lib/auth";
+import { monthTabPattern } from "@/lib/sheet";
 
 export const runtime = "nodejs";
 
@@ -8,7 +10,7 @@ type Sheet = { properties: { title: string; sheetId: number } };
 const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
 class SyncError extends Error {
-  constructor(message: string, readonly status = 400) { super(message); }
+  constructor(message: string, readonly status = 400, readonly code?: string) { super(message); }
 }
 
 function parseEvent(value: unknown): Event {
@@ -27,10 +29,18 @@ function parseEvent(value: unknown): Event {
 export async function POST(request: Request) {
   try {
     // Prevent other websites from submitting writes through a user's browser.
-    const origin = request.headers.get("origin");
-    if (!origin || origin !== new URL(request.url).origin) {
+    if (!isSameOrigin(request)) {
       throw new SyncError("Sync must be requested from the Excela page.", 403);
     }
+    let current;
+    try { current = await getSessionUser(); }
+    catch { throw new SyncError("Could not reach the database. Please retry.", 503); }
+    if (!current) throw new SyncError("Sign in with Google to sync.", 401, "auth");
+    const { user } = current;
+    // The planner link is saved per user in MongoDB (see /api/sheet), not in .env.
+    if (!user.sheetId) throw new SyncError("Add your Google Sheets link before syncing.", 409, "no_sheet");
+    const spreadsheetId = user.sheetId;
+
     let body;
     try { body = await request.json(); }
     catch { throw new SyncError("Invalid JSON body."); }
@@ -38,12 +48,13 @@ export async function POST(request: Request) {
       throw new SyncError("Provide between 1 and 50 extracted events.");
     }
     const events = body.events.map(parseEvent) as Event[];
-    const doc = process.env.DOC?.trim();
-    const spreadsheetId = doc?.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([\w-]+)(?:\/|$)/)?.[1];
-    if (!spreadsheetId) throw new SyncError("Set DOC to your Google Sheets link in .env.", 503);
+
     let token: string;
-    try { token = await googleAccessToken(); }
-    catch { throw new SyncError("Connect Google before syncing. If already connected, reconnect to renew access.", 401); }
+    try { token = await googleAccessToken(user); }
+    catch (error) {
+      if (error instanceof GoogleAccessError) throw new SyncError(error.message, 401, "reauth");
+      throw new SyncError("Could not reach the database. Please retry.", 503);
+    }
     const base = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
     async function google(path: string, init: RequestInit = {}) {
       const result = await fetch(`${base}${path}`, {
@@ -54,8 +65,8 @@ export async function POST(request: Request) {
       });
       if (!result.ok) {
         const reason = result.status === 403
-          ? "Enable the Google Sheets API and make sure your connected Google account can edit this sheet."
-          : result.status === 404 ? "Check DOC and the sheet's sharing permissions."
+          ? "Enable the Google Sheets API and make sure your Google account can edit this sheet."
+          : result.status === 404 ? "Your saved sheet link no longer works. Check the link and the sheet's sharing permissions."
           : "Please retry; existing entries will be checked for duplicates.";
         throw new SyncError(`Google Sheets request failed (${result.status}). ${reason}`, 502);
       }
@@ -69,7 +80,7 @@ export async function POST(request: Request) {
       const month = parts[parts.length - 2];
       const day = parts[parts.length - 1];
       const candidates = metadata.sheets.filter(({ properties }) => {
-        const match = properties.title.match(/\b(Jan\w*|Feb\w*|Mar\w*|Apr\w*|May|Jun\w*|Jul\w*|Aug\w*|Sep\w*|Oct\w*|Nov\w*|Dec\w*)\s+(\d{4})\b/i);
+        const match = properties.title.match(monthTabPattern);
         return match && months.indexOf(match[1].slice(0, 3).toLowerCase()) + 1 === month &&
           (year === undefined || Number(match[2]) === year);
       });
@@ -88,7 +99,7 @@ export async function POST(request: Request) {
     // Displayed day numbers locate the date; formulas protect seemingly blank cells.
     const displayed = await google(`/values:batchGet?${query}&valueRenderOption=FORMATTED_VALUE`) as { valueRanges: Values[] };
     const formulas = await google(`/values:batchGet?${query}&valueRenderOption=FORMULA`) as { valueRanges: Values[] };
-    const updates: { range: string; label: string; sheetId: number; rowIndex: number; columnIndex: number }[] = [];
+    const updates: { range: string; label: string; sheet: string; cell: string; sheetId: number; rowIndex: number; columnIndex: number }[] = [];
     let skipped = 0;
     for (const target of targets) {
       const rangeIndex = ranges.indexOf(target.range);
@@ -108,7 +119,7 @@ export async function POST(request: Request) {
       if (slot === undefined) throw new SyncError(`All four event slots on ${target.event.date} are occupied. Nothing was written.`);
       updates.push({
         range: `'${target.sheet.replaceAll("'", "''")}'!${"DEFGH"[slot]}${rowIndex + 3}`,
-        label, sheetId: target.sheetId, rowIndex: rowIndex + 2, columnIndex: slot + 3,
+        label, sheet: target.sheet, cell: `${"DEFGH"[slot]}${rowIndex + 3}`, sheetId: target.sheetId, rowIndex: rowIndex + 2, columnIndex: slot + 3,
       });
       row[slot] = label; // Reserve this slot for subsequent events in the same request.
     }
@@ -137,9 +148,18 @@ export async function POST(request: Request) {
         })) }),
       });
     }
-    return Response.json({ written: updates.length, skipped, cells: updates.map(({ range }) => range) });
+    // One link per month tab that received events, opening that tab at the first new cell.
+    const links: { sheet: string; url: string }[] = [];
+    for (const update of updates) {
+      if (links.some((link) => link.sheet === update.sheet)) continue;
+      links.push({
+        sheet: update.sheet,
+        url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${update.sheetId}&range=${update.cell}`,
+      });
+    }
+    return Response.json({ written: updates.length, skipped, cells: updates.map(({ range }) => range), links });
   } catch (error) {
-    if (error instanceof SyncError) return Response.json({ error: error.message }, { status: error.status });
+    if (error instanceof SyncError) return Response.json({ error: error.message, code: error.code }, { status: error.status });
     return Response.json({ error: "Sync could not finish. Check your connection and retry; duplicates will be skipped." }, { status: 502 });
   }
 }

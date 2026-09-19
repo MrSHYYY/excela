@@ -1,28 +1,114 @@
+import type { Credentials, TokenPayload } from "google-auth-library";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { googleClient, saveGoogleSession, sheetsScope } from "@/ai/google-auth";
+import { googleClient, sheetsScope } from "@/ai/google-auth";
+import {
+  OAUTH_COOKIE,
+  SESSION_COOKIE,
+  SESSION_SECONDS,
+  cookieOptions,
+  createSession,
+  deleteSession,
+} from "@/lib/auth";
+import { encrypt } from "@/lib/crypto";
+import { usersCollection } from "@/lib/mongodb";
+
+export const runtime = "nodejs";
+
+type Flow = { state: string; codeVerifier: string; consent: boolean };
+
+function readFlow(raw: string | undefined): Flow | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+    if (typeof value.state === "string" && typeof value.codeVerifier === "string") {
+      return { state: value.state, codeVerifier: value.codeVerifier, consent: value.consent === true };
+    }
+  } catch {
+    // Fall through: treated as an invalid flow.
+  }
+  return null;
+}
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const jar = await cookies();
-  const expected = jar.get("excela_google_state")?.value;
-  jar.delete("excela_google_state");
+  const flow = readFlow(jar.get(OAUTH_COOKIE)?.value);
+  const previousSession = jar.get(SESSION_COOKIE)?.value;
   const home = new URL("/", process.env.GOOGLE_REDIRECT_URI || request.url);
-  function finish(status: string) {
-    home.searchParams.set("google", status);
-    const response = NextResponse.redirect(home);
+
+  function redirect(to: URL) {
+    const response = NextResponse.redirect(to);
+    response.cookies.delete(OAUTH_COOKIE);
     response.headers.set("Cache-Control", "no-store");
     response.headers.set("Referrer-Policy", "no-referrer");
     return response;
   }
-  if (!expected || url.searchParams.get("state") !== expected) return finish("invalid_state");
+  function finish(status: string) {
+    const target = new URL(home);
+    target.searchParams.set("google", status);
+    return redirect(target);
+  }
+
+  if (!flow || url.searchParams.get("state") !== flow.state) return finish("invalid_state");
   if (url.searchParams.has("error")) return finish("denied");
   const code = url.searchParams.get("code");
   if (!code) return finish("failed");
+
+  // 1. Exchange the code (with the PKCE verifier) and verify who signed in.
+  let tokens: Credentials;
+  let profile: TokenPayload | undefined;
   try {
-    const { tokens } = await googleClient().getToken(code);
-    if (!tokens.access_token || !tokens.scope?.split(" ").includes(sheetsScope)) return finish("denied");
-    await saveGoogleSession(tokens);
-    return finish("connected");
-  } catch { return finish("failed"); }
+    const client = googleClient();
+    ({ tokens } = await client.getToken({ code, codeVerifier: flow.codeVerifier }));
+    if (!tokens.id_token || !tokens.scope?.split(" ").includes(sheetsScope)) return finish("denied");
+    const ticket = await client.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    profile = ticket.getPayload();
+  } catch (error) {
+    console.error("Google sign-in failed:", error instanceof Error ? error.message : error);
+    return finish("failed");
+  }
+  if (!profile?.sub || !profile.email || !profile.email_verified) return finish("unverified");
+  const { sub, email, name, picture } = profile;
+
+  // 2. Create or update the user, then start a session.
+  try {
+    const users = await usersCollection();
+    const existing = await users.findOne({ googleId: sub });
+    const refreshToken = tokens.refresh_token ? encrypt(tokens.refresh_token) : existing?.refreshToken;
+    if (!refreshToken) {
+      // Google only returns a refresh token on consent. Ask once more with the consent screen.
+      if (flow.consent) return finish("failed");
+      return redirect(new URL("/api/google/connect?consent=1", home));
+    }
+    const now = new Date();
+    await users.updateOne(
+      { googleId: sub },
+      {
+        $set: {
+          email: email.toLowerCase(),
+          name: name || email,
+          picture: picture ?? null,
+          refreshToken,
+          updatedAt: now,
+          lastLoginAt: now,
+        },
+        $setOnInsert: { createdAt: now },
+      },
+      { upsert: true },
+    );
+    const user = await users.findOne({ googleId: sub });
+    if (!user) return finish("database");
+    await deleteSession(previousSession);
+    const token = await createSession(user._id, request.headers.get("user-agent"));
+    const response = finish("connected");
+    response.cookies.set(SESSION_COOKIE, token, cookieOptions(SESSION_SECONDS));
+    return response;
+  } catch (error) {
+    console.error("Saving the signed-in user failed:", error instanceof Error ? error.message : error);
+    return finish("database");
+  }
 }
