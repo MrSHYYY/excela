@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 const RELEVANT_KEYWORDS = [
   // Academic events
@@ -78,16 +78,70 @@ export default function Home() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [provider, setProvider] = useState("gemini");
+  const [events, setEvents] = useState<{ course: string; title: string; date: string }[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [synced, setSynced] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
+  const [googleConnected, setGoogleConnected] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    async function checkConnection() {
+      try {
+        const result = await fetch("/api/google/status", { cache: "no-store" });
+        const data = await result.json();
+        if (active) setGoogleConnected(data.connected === true);
+      } catch { if (active) setGoogleConnected(false); }
+    }
+    const status = new URLSearchParams(window.location.search).get("google");
+    if (status && status !== "connected") {
+      const messages: Record<string, string> = {
+        denied: "Google Sheets permission was not granted. Connect again and allow Sheets access.",
+        invalid_state: "Google sign-in expired or was opened in a different browser. Please connect again.",
+        failed: "Google sign-in failed. Check the OAuth credentials and registered redirect URL.",
+      };
+      setError(messages[status] || "Please connect Google again.");
+    }
+    void checkConnection();
+    window.addEventListener("focus", checkConnection);
+    return () => { active = false; window.removeEventListener("focus", checkConnection); };
+  }, []);
+
+  async function handleSync() {
+    if (!events.length || syncing || synced || loading) return;
+    setSyncing(true);
+    setSyncMessage("");
+    setError("");
+    try {
+      const result = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ events }),
+      });
+      const data = await result.json();
+      if (result.status === 401) setGoogleConnected(false);
+      if (!result.ok) throw new Error(data.error || "Unable to sync with Google Sheets.");
+      setSynced(true);
+      setSyncMessage(`Synced: ${data.written} event(s) written, ${data.skipped} already present.`);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to sync with Google Sheets.");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const trimmedMessage = message.trim();
 
-    if (!trimmedMessage || loading) return;
+    if (!trimmedMessage || loading || syncing) return;
 
     setError("");
     setResponse("");
+    setEvents([]);
+    setSynced(false);
+    setSyncMessage("");
 
     // --------------------------------------------------
     // LOCAL PRE-FILTER
@@ -130,6 +184,7 @@ export default function Home() {
         throw new Error("No response received. Please try again.");
       }
 
+      setEvents(Array.isArray(data.response?.events) ? data.response.events : []);
       setResponse(
         typeof data.response === "string"
           ? data.response
@@ -159,6 +214,20 @@ export default function Home() {
           </p>
         </header>
 
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href="/api/google/connect"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-lg border border-zinc-300 px-4 py-2 font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            {googleConnected ? "Reconnect Google" : "Connect Google"}
+          </a>
+          <p role="status" className="text-sm text-zinc-600 dark:text-zinc-400">
+            {googleConnected ? "Google connected. Ready to sync." : "Connect your Google account to sync with the planner."}
+          </p>
+        </div>
+
         <form
           onSubmit={handleSubmit}
           className="flex flex-col gap-4"
@@ -170,11 +239,14 @@ export default function Home() {
           <select
             id="provider"
             value={provider}
-            disabled={loading}
+            disabled={loading || syncing}
             onChange={(event) => {
               setProvider(event.target.value);
               setResponse("");
               setError("");
+              setEvents([]);
+              setSynced(false);
+              setSyncMessage("");
             }}
             className="w-full rounded-xl border border-zinc-300 bg-white p-3 focus:ring-2 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-900"
           >
@@ -198,13 +270,13 @@ export default function Home() {
             placeholder="Example: CSE340 QUIZ4 SEPT 27"
             rows={5}
             required
-            disabled={loading}
+            disabled={loading || syncing}
             className="w-full resize-y rounded-xl border border-zinc-300 bg-white p-4 outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900"
           />
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || syncing}
             className="self-start rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? "Sending…" : "Send"}
@@ -237,6 +309,17 @@ export default function Home() {
               ? "Processing your announcement…"
               : response || "Your reply will appear here."}
           </pre>
+          {events.length > 0 && (
+            <button
+              type="button"
+              onClick={handleSync}
+              disabled={loading || syncing || synced || !googleConnected}
+              className="mt-5 rounded-lg bg-emerald-700 px-5 py-3 font-medium text-white hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {syncing ? "Syncing…" : synced ? "Synced with DOC" : "Sync with DOC"}
+            </button>
+          )}
+          {syncMessage && <p role="status" className="mt-3 text-sm text-emerald-700 dark:text-emerald-400">{syncMessage}</p>}
         </section>
       </div>
     </main>
