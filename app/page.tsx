@@ -7,6 +7,7 @@ export default function Home() {
   const [response, setResponse] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [provider, setProvider] = useState("gemini");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -20,7 +21,7 @@ export default function Home() {
       const result = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: message.trim() }),
+        body: JSON.stringify({ message: message.trim(), provider }),
       });
       const data = await result.json();
 
@@ -49,6 +50,21 @@ export default function Home() {
         </header>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <label htmlFor="provider" className="font-medium">AI model</label>
+          <select
+            id="provider"
+            value={provider}
+            disabled={loading}
+            onChange={(event) => {
+              setProvider(event.target.value);
+              setResponse("");
+              setError("");
+            }}
+            className="w-full rounded-xl border border-zinc-300 bg-white p-3 focus:ring-2 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-900"
+          >
+            <option value="gemini">Gemini — Flash</option>
+            <option value="ollama">Ollama — gemma4:31b</option>
+          </select>
           <label htmlFor="message" className="font-medium">Your message</label>
           <textarea
             id="message"
@@ -72,9 +88,9 @@ export default function Home() {
         {error && <p role="alert" className="text-red-600 dark:text-red-400">{error}</p>}
 
         <section aria-live="polite" aria-busy={loading} className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="font-semibold">Gemini’s response</h2>
+          <h2 className="font-semibold">{provider === "ollama" ? "Ollama" : "Gemini"} response</h2>
           <pre className="mt-3 whitespace-pre-wrap break-words font-mono text-sm text-zinc-600 dark:text-zinc-300">
-            {loading ? "Waiting for Gemini…" : response || "Your reply will appear here."}
+            {loading ? "Processing your announcement…" : response || "Your reply will appear here."}
           </pre>
         </section>
       </div>
