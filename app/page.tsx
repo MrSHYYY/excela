@@ -66,7 +66,7 @@ function passesInputFilter(message: string): boolean {
 
     // Match whole words so things like "contest" don't accidentally
     // match "test".
-    const regex = new RegExp(`\\b${escapedKeyword}\\b`, "i");
+    const regex = new RegExp(`\\b${escapedKeyword}(?=\\b|\\d)`, "i");
 
     return regex.test(normalized);
   });
@@ -195,7 +195,7 @@ export default function Home() {
             id="message"
             value={message}
             onChange={(event) => setMessage(event.target.value)}
-            placeholder="Paste a class announcement with a date and time…"
+            placeholder="Example: CSE340 QUIZ4 SEPT 27"
             rows={5}
             required
             disabled={loading}
