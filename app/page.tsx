@@ -104,6 +104,10 @@ export default function Home() {
   const [sheetInput, setSheetInput] = useState("");
   const [savingSheet, setSavingSheet] = useState(false);
   const [editingSheet, setEditingSheet] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -153,6 +157,8 @@ export default function Home() {
     catch { /* The server-side session expires on its own if this fails. */ }
     setSession({ authenticated: false });
     setMessage("");
+    setNotice("");
+    setConfirmingDelete(false);
     setError("");
     setEditingSheet(false);
     setSheetInput("");
@@ -162,8 +168,9 @@ export default function Home() {
   async function handleSaveSheet(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const url = sheetInput.trim();
-    if (!url || savingSheet) return;
+    if (!url || savingSheet || generating) return;
     setSavingSheet(true);
+    setNotice("");
     setError("");
     try {
       const result = await fetch("/api/sheet", {
@@ -186,6 +193,57 @@ export default function Home() {
       setError(error instanceof Error ? error.message : "Unable to save your link.");
     } finally {
       setSavingSheet(false);
+    }
+  }
+
+  async function handleGenerateTemplate() {
+    if (generating || savingSheet) return;
+    setGenerating(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await fetch("/api/sheet/template", { method: "POST" });
+      const data = await result.json();
+      if (!result.ok) {
+        handleAuthCode(data.code);
+        throw new Error(data.error || "Unable to generate your template.");
+      }
+      setViewLinks([]);
+      setSession((current) => (current?.authenticated ? { ...current, sheet: data.sheet } : current));
+      setEditingSheet(false);
+      setSheetInput("");
+      setSynced(false);
+      setSyncMessage("");
+      setNotice("Your planner was created in your Google Drive and saved to your account. It will be used for future syncs.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to generate your template.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    if (deleting) return;
+    setDeleting(true);
+    setError("");
+    try {
+      const result = await fetch("/api/account", { method: "DELETE" });
+      const data = await result.json();
+      if (!result.ok) {
+        handleAuthCode(data.code);
+        throw new Error(data.error || "Unable to delete your account.");
+      }
+      setSession({ authenticated: false });
+      setMessage("");
+      setEditingSheet(false);
+      setSheetInput("");
+      setConfirmingDelete(false);
+      resetResults();
+      setNotice("Your account and all data Excela stored about you were deleted.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to delete your account.");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -306,6 +364,12 @@ export default function Home() {
           </p>
         )}
 
+        {notice && (
+          <p role="status" className="text-emerald-700 dark:text-emerald-400">
+            {notice}
+          </p>
+        )}
+
         {session === null && (
           <p role="status" className="text-sm text-zinc-600 dark:text-zinc-400">
             Loading…
@@ -413,6 +477,20 @@ export default function Home() {
                       Cancel
                     </button>
                   )}
+                </div>
+                <div className="mt-2 flex flex-col gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    No planner yet? Excela can create one in your Google Drive from its template and use it for
+                    future syncs.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleGenerateTemplate}
+                    disabled={generating || savingSheet}
+                    className="self-start rounded-lg border border-zinc-300 px-5 py-2.5 font-medium hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                  >
+                    {generating ? "Generating… this can take a few seconds" : "Generate template"}
+                  </button>
                 </div>
               </form>
             )}
@@ -541,6 +619,48 @@ export default function Home() {
           </>
         )}
       </div>
+      {session?.authenticated && (
+        <div className="mx-auto mt-12 w-full max-w-2xl border-t border-zinc-200 pt-6 dark:border-zinc-800">
+          <h2 className="font-semibold">Delete account</h2>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            Permanently deletes your Excela account and everything Excela stores about you: your profile, your
+            saved planner link, Google access and sign-in sessions. Your Google Sheets are not changed or deleted.
+          </p>
+          {confirmingDelete ? (
+            <div className="mt-4 flex flex-col gap-3">
+              <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">
+                This cannot be undone. Delete your account?
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={handleDeleteAccount}
+                  disabled={deleting}
+                  className="rounded-lg bg-red-700 px-5 py-2.5 font-medium text-white hover:bg-red-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {deleting ? "Deleting…" : "Yes, delete everything"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={deleting}
+                  className="rounded-lg border border-zinc-300 px-5 py-2.5 font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(true)}
+              className="mt-4 rounded-lg border border-red-700 px-5 py-2.5 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-500 dark:text-red-400 dark:hover:bg-red-950"
+            >
+              Delete account
+            </button>
+          )}
+        </div>
+      )}
     </main>
   );
 }

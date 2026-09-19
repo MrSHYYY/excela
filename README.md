@@ -26,6 +26,11 @@ Excela turns a class announcement into events and writes them into your own mont
 
 Collections and indexes are created automatically on first use. Changing `GOOGLE_SESSION_SECRET` makes stored refresh tokens unreadable, so users would need to sign in again.
 
+## Generate template and delete account
+
+- **Generate template**: on the planner-link form, users without a planner can click it. Excela creates a new spreadsheet in the user's own Google Drive, copies every tab of the template from `TEMPLATE_SHEET_URL` into it, and saves it as their planner. The template must be shared as "Anyone with the link can view" so every user's Google account can read it. Uses only the Sheets permission the user already granted.
+- **Delete account**: removes the user's `users` document and all their `sessions` from MongoDB, revokes Excela's Google access, and signs them out. Their Google Sheets (including a generated planner) stay in their own Google account.
+
 ## Planner template
 
 - Month tabs are matched by month and year, for example `Sept 2026`.
