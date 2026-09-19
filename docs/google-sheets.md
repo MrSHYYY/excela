@@ -22,12 +22,14 @@ If Google shows `redirect_uri_mismatch`, check the exact protocol, host, port, p
 - Dates without a year must match exactly one month tab. Otherwise include the year and extract again.
 - Displayed day numbers in `D3:D45` identify the target row.
 - `course + title` is written as plain text in the first empty cell in E–H on that row.
-- Existing values, formulas, and formatting are preserved. Identical labels on that date are skipped.
+- Newly written event cells have a dark red background (#991B1B) and white text; their other formatting is preserved. Existing values and formulas remain untouched. Identical labels on that date are skipped.
 - All events are checked before a batch write. Full rows or unmatched dates stop the batch.
 
 ## Session and deployment
 
-Google tokens are held in an encrypted, HttpOnly, SameSite cookie, never exposed to client JavaScript. Sessions last up to seven days, with access-token refresh while authorized. No database is required. Reconnect if Google revokes or expires authorization.
+Google tokens are held in an encrypted, HttpOnly, SameSite cookie, never exposed to client JavaScript. Sessions persist across browser and server restarts for 180 days, renewed on visits and syncs. Expired access tokens are refreshed automatically when syncing. No database is required. Use the same browser and hostname; clearing cookies, private browsing, or changing the session secret removes the connection. Existing valid sessions adopt the longer duration on the next page visit.
+
+Google's own authorization lifetime still applies: External OAuth apps in **Testing** receive refresh tokens that expire after seven days for Sheets access. To remove this testing limit, change the OAuth publishing status to **In production** in Google Auth Platform → Audience and reconnect once. Complete any verification Google requires. Google may still expire or revoke authorization; reconnect if that happens. See [Google's refresh-token expiration rules](https://developers.google.com/identity/protocols/oauth2#expiration).
 
 For Vercel, set the same server-only environment variables and change `GOOGLE_REDIRECT_URI` to `https://YOUR-DOMAIN/api/google/callback`. Register that exact URL with Google. Keep the session secret stable across deployments. Do not use `NEXT_PUBLIC_` for any credentials.
 

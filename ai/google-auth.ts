@@ -30,7 +30,7 @@ function sessionKey() {
 }
 
 export async function saveGoogleSession(tokens: Credentials) {
-  const maxAge = 7 * 24 * 60 * 60;
+  const maxAge = 180 * 24 * 60 * 60;
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", sessionKey(), iv);
   // Omit ID tokens and unrelated fields to stay within browser cookie limits.
@@ -64,6 +64,10 @@ export async function googleAccessToken() {
   client.setCredentials(tokens);
   const { token } = await client.getAccessToken();
   if (!token) throw new Error("Google sign-in expired.");
-  await saveGoogleSession({ ...tokens, ...client.credentials });
+  await saveGoogleSession({
+    ...tokens,
+    ...client.credentials,
+    refresh_token: client.credentials.refresh_token ?? tokens.refresh_token,
+  });
   return token;
 }

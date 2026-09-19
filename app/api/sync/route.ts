@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 
 type Event = { course: string; title: string; date: string };
 type Values = { values?: string[][] };
-type Sheet = { properties: { title: string } };
+type Sheet = { properties: { title: string; sheetId: number } };
 const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
 class SyncError extends Error {
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       return result.json();
     }
 
-    const metadata = await google("?fields=sheets(properties(title))") as { sheets: Sheet[] };
+    const metadata = await google("?fields=sheets(properties(title,sheetId))") as { sheets: Sheet[] };
     const targets = events.map((event) => {
       const parts = event.date.split("-").map(Number);
       const year = parts.length === 3 ? parts[0] : undefined;
@@ -81,14 +81,14 @@ export async function POST(request: Request) {
       if (day < 1 || day > new Date(Date.UTC(sheetYear, month, 0)).getUTCDate()) {
         throw new SyncError(`Invalid calendar date: ${event.date}.`);
       }
-      return { event, day, sheet: title, range: `'${title.replaceAll("'", "''")}'!D3:H45` };
+      return { event, day, sheet: title, sheetId: candidates[0].properties.sheetId, range: `'${title.replaceAll("'", "''")}'!D3:H45` };
     });
     const ranges = [...new Set(targets.map((target) => target.range))];
     const query = ranges.map((range) => `ranges=${encodeURIComponent(range)}`).join("&");
     // Displayed day numbers locate the date; formulas protect seemingly blank cells.
     const displayed = await google(`/values:batchGet?${query}&valueRenderOption=FORMATTED_VALUE`) as { valueRanges: Values[] };
     const formulas = await google(`/values:batchGet?${query}&valueRenderOption=FORMULA`) as { valueRanges: Values[] };
-    const updates: { range: string; values: string[][] }[] = [];
+    const updates: { range: string; label: string; sheetId: number; rowIndex: number; columnIndex: number }[] = [];
     let skipped = 0;
     for (const target of targets) {
       const rangeIndex = ranges.indexOf(target.range);
@@ -106,13 +106,35 @@ export async function POST(request: Request) {
       }
       const slot = slots.find((index) => !String(row[index] ?? "").trim() && !String(protectedRows[rowIndex]?.[index] ?? "").trim());
       if (slot === undefined) throw new SyncError(`All four event slots on ${target.event.date} are occupied. Nothing was written.`);
-      updates.push({ range: `'${target.sheet.replaceAll("'", "''")}'!${"DEFGH"[slot]}${rowIndex + 3}`, values: [[label]] });
+      updates.push({
+        range: `'${target.sheet.replaceAll("'", "''")}'!${"DEFGH"[slot]}${rowIndex + 3}`,
+        label, sheetId: target.sheetId, rowIndex: rowIndex + 2, columnIndex: slot + 3,
+      });
       row[slot] = label; // Reserve this slot for subsequent events in the same request.
     }
     if (updates.length) {
-      await google("/values:batchUpdate", {
+      // Write text and colors together; preserve all other cell formatting.
+      await google(":batchUpdate", {
         method: "POST",
-        body: JSON.stringify({ valueInputOption: "RAW", data: updates }),
+        body: JSON.stringify({ requests: updates.map((update) => ({
+          repeatCell: {
+            range: {
+              sheetId: update.sheetId,
+              startRowIndex: update.rowIndex,
+              endRowIndex: update.rowIndex + 1,
+              startColumnIndex: update.columnIndex,
+              endColumnIndex: update.columnIndex + 1,
+            },
+            cell: {
+              userEnteredValue: { stringValue: update.label },
+              userEnteredFormat: {
+                backgroundColorStyle: { rgbColor: { red: 153 / 255, green: 27 / 255, blue: 27 / 255 } },
+                textFormat: { foregroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } } },
+              },
+            },
+            fields: "userEnteredValue,userEnteredFormat.backgroundColorStyle,userEnteredFormat.textFormat.foregroundColorStyle",
+          },
+        })) }),
       });
     }
     return Response.json({ written: updates.length, skipped, cells: updates.map(({ range }) => range) });
