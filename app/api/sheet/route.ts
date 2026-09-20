@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 
 type SheetInfo = { properties?: { title?: string }; sheets?: { properties?: { title?: string } }[] };
 
-// Saves (or replaces) the signed-in user's planner link in MongoDB after checking they can open it.
+// Verify Picker's selection on the server before saving it as the user's planner.
 export async function PUT(request: Request) {
   if (!isSameOrigin(request)) {
     return Response.json({ error: "The link must be saved from the Excela page." }, { status: 403 });
@@ -18,7 +18,7 @@ export async function PUT(request: Request) {
   const sheetId = parseSheetUrl(body?.url);
   if (!sheetId) {
     return Response.json(
-      { error: "Paste a Google Sheets link, like https://docs.google.com/spreadsheets/d/…/edit" },
+      { error: "Choose a Google Sheet from Google Drive." },
       { status: 400 },
     );
   }
@@ -34,14 +34,25 @@ export async function PUT(request: Request) {
       return Response.json({ error: error.message, code: "reauth" }, { status: 401 });
     }
 
+    const fileResult = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${sheetId}?fields=mimeType,capabilities(canEdit)&supportsAllDrives=true`,
+      { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(15_000) },
+    );
+    if (!fileResult.ok) {
+      return Response.json({ error: "Excela couldn't access this file. Choose it through Google Drive again and make sure your account can edit it. Also check that Google Drive API is enabled." }, { status: 422 });
+    }
+    const file = await fileResult.json() as { mimeType?: string; capabilities?: { canEdit?: boolean } };
+    if (file.mimeType !== "application/vnd.google-apps.spreadsheet" || !file.capabilities?.canEdit) {
+      return Response.json({ error: "Choose a native Google Sheet that your account can edit." }, { status: 422 });
+    }
     const result = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=properties.title,sheets.properties.title`,
       { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(20_000) },
     );
     if (!result.ok) {
       const reason =
-        result.status === 404 ? "That sheet was not found. Check the link."
-        : result.status === 403 ? "Your Google account can't open that sheet. Ask the owner to share it with you, then try again."
+        result.status === 404 ? "That sheet wasn't found. Choose it through Google Drive again."
+        : result.status === 403 ? "Choose the sheet through Google Drive again and make sure your account can edit it and Google Sheets API is enabled."
         : result.status === 400 ? "That file isn't a native Google Sheet. If it's an uploaded Excel file, use File → Save as Google Sheets first."
         : `Google Sheets request failed (${result.status}). Please try again.`;
       return Response.json({ error: reason }, { status: result.status === 404 || result.status === 403 || result.status === 400 ? 422 : 502 });

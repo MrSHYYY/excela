@@ -3,9 +3,9 @@ import { decrypt } from "@/lib/crypto";
 import type { UserDoc } from "@/lib/models";
 import { usersCollection } from "@/lib/mongodb";
 
-export const sheetsScope = "https://www.googleapis.com/auth/spreadsheets";
-// openid/email/profile identify the user; the Sheets scope lets Excela write to their planner.
-export const loginScopes = ["openid", "email", "profile", sheetsScope];
+export const driveFileScope = "https://www.googleapis.com/auth/drive.file";
+// File access is limited to files created by Excela or selected through Google Picker.
+export const loginScopes = ["openid", "email", "profile", driveFileScope];
 
 export function googleClient() {
   const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = process.env;
@@ -20,6 +20,9 @@ export class GoogleAccessError extends Error {}
 
 /** Exchanges the user's stored refresh token for a fresh access token. */
 export async function googleAccessToken(user: UserDoc): Promise<string> {
+  if (!user.googleScopes?.includes(driveFileScope)) {
+    throw new GoogleAccessError("Reconnect Google to allow access to planners you create or select in Excela.");
+  }
   const refreshToken = user.refreshToken ? decrypt(user.refreshToken) : null;
   if (!refreshToken) throw new GoogleAccessError("Google access is missing. Sign in with Google again.");
   const client = googleClient();

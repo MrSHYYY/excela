@@ -10,6 +10,7 @@ export type UserDoc = {
   picture: string | null;
   /** Google refresh token, AES-256-GCM encrypted with GOOGLE_SESSION_SECRET. */
   refreshToken?: string;
+  googleScopes?: string[];
   /** The user's monthly planner. Set after sign-in. */
   sheetUrl?: string;
   sheetId?: string;

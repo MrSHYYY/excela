@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import Landing from "./landing";
 import { SIGN_IN_CHANNEL, startGoogleSignIn } from "./google-sign-in";
 import type { Session } from "@/lib/session-payload";
+import { choosePlanner } from "@/lib/google-picker";
 
 const RELEVANT_KEYWORDS = [
   // Academic events
@@ -76,7 +77,7 @@ function passesInputFilter(message: string): boolean {
 }
 
 const signInMessages: Record<string, string> = {
-  denied: "Google permission was not granted. Continue with Google again and allow access to Google Sheets.",
+  denied: "Google permission was not granted. Continue with Google again and allow access to files you create or select with Excela.",
   invalid_state: "Sign-in expired or was opened in a different browser. Please try again.",
   unverified: "That Google account's email is not verified. Use a verified Google account.",
   database: "Signed in with Google, but Excela could not reach its database. Check MONGODB_URI and Atlas network access.",
@@ -97,7 +98,6 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   const [syncMessage, setSyncMessage] = useState("");
   const [viewLinks, setViewLinks] = useState<{ sheet: string; url: string }[]>([]);
   const [session, setSession] = useState<Session | null>(initialSession);
-  const [sheetInput, setSheetInput] = useState("");
   const [savingSheet, setSavingSheet] = useState(false);
   const [editingSheet, setEditingSheet] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -212,18 +212,23 @@ export default function HomeClient({ initialSession }: { initialSession: Session
     setMenuOpen(false);
     setError("");
     setEditingSheet(false);
-    setSheetInput("");
     resetResults();
   }
 
-  async function handleSaveSheet(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const url = sheetInput.trim();
-    if (!url || savingSheet || generating) return;
+  async function handleChooseSheet() {
+    if (savingSheet || generating) return;
     setSavingSheet(true);
     setNotice("");
     setError("");
     try {
+      const pickerResult = await fetch("/api/google/picker", { method: "POST", cache: "no-store" });
+      const config = await pickerResult.json();
+      if (!pickerResult.ok) {
+        handleAuthCode(config.code);
+        throw new Error(config.error || "Unable to open Google Drive.");
+      }
+      const url = await choosePlanner(config);
+      if (!url) return;
       const result = await fetch("/api/sheet", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -237,7 +242,6 @@ export default function HomeClient({ initialSession }: { initialSession: Session
       setViewLinks([]);
       setSession((current) => (current?.authenticated ? { ...current, sheet: data.sheet } : current));
       setEditingSheet(false);
-      setSheetInput("");
       setSynced(false);
       setSyncMessage("");
     } catch (error) {
@@ -262,7 +266,6 @@ export default function HomeClient({ initialSession }: { initialSession: Session
       setViewLinks([]);
       setSession((current) => (current?.authenticated ? { ...current, sheet: data.sheet } : current));
       setEditingSheet(false);
-      setSheetInput("");
       setSynced(false);
       setSyncMessage("");
       setNotice("Your planner was created in your Google Drive and saved to your account. It will be used for future syncs.");
@@ -287,7 +290,6 @@ export default function HomeClient({ initialSession }: { initialSession: Session
       setSession({ authenticated: false });
       setMessage("");
       setEditingSheet(false);
-      setSheetInput("");
       setConfirmingDelete(false);
       setMenuOpen(false);
       resetResults();
@@ -570,7 +572,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
 
             {!session.googleAccess && (
               <p role="alert" className="text-sm text-amber-700 dark:text-amber-400">
-                Excela&apos;s access to your Google Sheets has expired.{" "}
+                Reconnect Google to allow access to planners you create or select in Excela.{" "}
                 <a
                   href="/api/google/connect?consent=1"
                   onClick={(event) => {
@@ -586,40 +588,30 @@ export default function HomeClient({ initialSession }: { initialSession: Session
             )}
 
             {(!session.sheet || editingSheet) && (
-              <form
-                onSubmit={handleSaveSheet}
+              <div
                 className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
               >
-                <label htmlFor="sheet" className="font-semibold">
-                  {session.sheet ? "Change your planner link" : "Add your planner link"}
-                </label>
+                <h2 className="font-semibold">
+                  {session.sheet ? "Change your planner" : "Choose your planner"}
+                </h2>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                  Paste the Google Sheets link of your monthly planner (tabs named like “Sept 2026”). Excela
-                  saves it to your account, so you only do this once.
+                  Choose your monthly planner (tabs named like “Sept 2026”) from Google Drive.
+                  Excela can access files you select or create with it and saves your choice to your account.
                 </p>
-                <input
-                  id="sheet"
-                  type="url"
-                  required
-                  value={sheetInput}
-                  onChange={(event) => setSheetInput(event.target.value)}
-                  placeholder="https://docs.google.com/spreadsheets/d/…/edit"
-                  disabled={savingSheet}
-                  className="w-full rounded-xl border border-zinc-300 bg-white p-3 outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950"
-                />
                 <div className="flex gap-3">
                   <button
-                    type="submit"
-                    disabled={savingSheet}
+                    type="button"
+                    onClick={handleChooseSheet}
+                    disabled={savingSheet || generating || !session.googleAccess}
                     className="rounded-lg bg-blue-600 px-5 py-2.5 font-medium text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {savingSheet ? "Checking…" : "Save link"}
+                    {savingSheet ? "Choosing planner…" : "Choose from Google Drive"}
                   </button>
                   {session.sheet && (
                     <button
                       type="button"
-                      disabled={savingSheet}
-                      onClick={() => { setEditingSheet(false); setSheetInput(""); setError(""); }}
+                      disabled={savingSheet || generating}
+                      onClick={() => { setEditingSheet(false); setError(""); }}
                       className="rounded-lg border border-zinc-300 px-5 py-2.5 font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
                     >
                       Cancel
@@ -634,13 +626,13 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                   <button
                     type="button"
                     onClick={handleGenerateTemplate}
-                    disabled={generating || savingSheet}
+                    disabled={generating || savingSheet || !session.googleAccess}
                     className="self-start rounded-lg border border-zinc-300 px-5 py-2.5 font-medium hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
                   >
                     {generating ? "Generating… this can take a few seconds" : "Generate template"}
                   </button>
                 </div>
-              </form>
+              </div>
             )}
 
             {session.sheet && (

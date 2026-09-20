@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     if (!current) throw new SyncError("Sign in with Google to sync.", 401, "auth");
     const { user } = current;
     // The planner link is saved per user in MongoDB (see /api/sheet), not in .env.
-    if (!user.sheetId) throw new SyncError("Add your Google Sheets link before syncing.", 409, "no_sheet");
+    if (!user.sheetId) throw new SyncError("Choose or generate your planner before syncing.", 409, "no_sheet");
     const spreadsheetId = user.sheetId;
 
     let body;
@@ -66,8 +66,8 @@ export async function POST(request: Request) {
       });
       if (!result.ok) {
         const reason = result.status === 403
-          ? "Enable the Google Sheets API and make sure your Google account can edit this sheet."
-          : result.status === 404 ? "Your saved sheet link no longer works. Check the link and the sheet's sharing permissions."
+          ? "Choose your planner through Google Drive again, check that your account can edit it, and make sure Google Sheets API is enabled."
+          : result.status === 404 ? "Choose your planner through Google Drive again to grant Excela access. If it was deleted, select another planner."
           : "Please retry; existing entries will be checked for duplicates.";
         throw new SyncError(`Google Sheets request failed (${result.status}). ${reason}`, 502);
       }

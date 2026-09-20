@@ -1,7 +1,7 @@
 import type { Credentials, TokenPayload } from "google-auth-library";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { googleClient, sheetsScope } from "@/ai/google-auth";
+import { googleClient, driveFileScope } from "@/ai/google-auth";
 import {
   OAUTH_COOKIE,
   SESSION_COOKIE,
@@ -88,7 +88,7 @@ export async function GET(request: Request) {
   try {
     const client = googleClient();
     ({ tokens } = await client.getToken({ code, codeVerifier: flow.codeVerifier }));
-    if (!tokens.id_token || !tokens.scope?.split(" ").includes(sheetsScope)) return finish("denied");
+    if (!tokens.id_token || !tokens.scope?.split(" ").includes(driveFileScope)) return finish("denied");
     const ticket = await client.verifyIdToken({
       idToken: tokens.id_token,
       audience: process.env.GOOGLE_CLIENT_ID,
@@ -106,7 +106,8 @@ export async function GET(request: Request) {
     await ensureIndexes();
     const users = await usersCollection();
     const existing = await users.findOne({ googleId: sub });
-    const refreshToken = tokens.refresh_token ? encrypt(tokens.refresh_token) : existing?.refreshToken;
+    const refreshToken = tokens.refresh_token ? encrypt(tokens.refresh_token)
+      : existing?.googleScopes?.includes(driveFileScope) ? existing.refreshToken : undefined;
     if (!refreshToken) {
       // Google only returns a refresh token on consent. Ask once more with the consent screen.
       if (flow.consent) return finish("failed");
@@ -121,6 +122,7 @@ export async function GET(request: Request) {
           name: name || email,
           picture: picture ?? null,
           refreshToken,
+          googleScopes: tokens.scope?.split(" ") ?? [],
           updatedAt: now,
           lastLoginAt: now,
         },
