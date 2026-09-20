@@ -15,14 +15,30 @@ import { usersCollection } from "@/lib/mongodb";
 
 export const runtime = "nodejs";
 
-type Flow = { state: string; codeVerifier: string; consent: boolean };
+type Flow = { state: string; codeVerifier: string; consent: boolean; popup: boolean };
+
+// Shown in the sign-in popup. It tells the main tab how sign-in went (same-origin BroadcastChannel,
+// which keeps working even though Google's pages sit between the two windows) and then closes itself.
+function popupPage(status: string) {
+  const message = status === "connected"
+    ? "You're signed in. You can close this window."
+    : "Sign-in did not finish. You can close this window and try again.";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width, initial-scale=1">` +
+    `<meta name="color-scheme" content="light dark"><title>Excela</title></head>` +
+    `<body style="font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;padding:1rem;text-align:center">` +
+    `<p>${message}</p><script>` +
+    `try{var c=new BroadcastChannel("excela-google");c.postMessage({status:${JSON.stringify(status)}});c.close();}catch(e){}` +
+    `setTimeout(function(){window.close();},300);` +
+    `</script></body></html>`;
+}
 
 function readFlow(raw: string | undefined): Flow | null {
   if (!raw) return null;
   try {
     const value = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
     if (typeof value.state === "string" && typeof value.codeVerifier === "string") {
-      return { state: value.state, codeVerifier: value.codeVerifier, consent: value.consent === true };
+      return { state: value.state, codeVerifier: value.codeVerifier, consent: value.consent === true, popup: value.popup === true };
     }
   } catch {
     // Fall through: treated as an invalid flow.
@@ -45,6 +61,17 @@ export async function GET(request: Request) {
     return response;
   }
   function finish(status: string) {
+    if (flow?.popup) {
+      const response = new NextResponse(popupPage(status), {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store",
+          "Referrer-Policy": "no-referrer",
+        },
+      });
+      response.cookies.delete(OAUTH_COOKIE);
+      return response;
+    }
     const target = new URL(home);
     target.searchParams.set("google", status);
     return redirect(target);
@@ -82,7 +109,7 @@ export async function GET(request: Request) {
     if (!refreshToken) {
       // Google only returns a refresh token on consent. Ask once more with the consent screen.
       if (flow.consent) return finish("failed");
-      return redirect(new URL("/api/google/connect?consent=1", home));
+      return redirect(new URL(`/api/google/connect?consent=1${flow.popup ? "&popup=1" : ""}`, home));
     }
     const now = new Date();
     await users.updateOne(

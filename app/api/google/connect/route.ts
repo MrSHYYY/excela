@@ -11,7 +11,10 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   try {
     const client = googleClient();
-    const consent = new URL(request.url).searchParams.get("consent") === "1";
+    const params = new URL(request.url).searchParams;
+    const consent = params.get("consent") === "1";
+    // Popup mode keeps the main tab's history clean: the Google pages never enter it.
+    const popup = params.get("popup") === "1";
     const state = randomBytes(32).toString("hex");
     const { codeVerifier, codeChallenge } = await client.generateCodeVerifierAsync();
     const authUrl = client.generateAuthUrl({
@@ -26,7 +29,7 @@ export async function GET(request: Request) {
     // State and PKCE verifier live in a short-lived HttpOnly cookie until Google redirects back.
     response.cookies.set(
       OAUTH_COOKIE,
-      Buffer.from(JSON.stringify({ state, codeVerifier, consent })).toString("base64url"),
+      Buffer.from(JSON.stringify({ state, codeVerifier, consent, popup })).toString("base64url"),
       cookieOptions(600),
     );
     response.headers.set("Cache-Control", "no-store");

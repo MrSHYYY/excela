@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import type { ReactNode } from "react";
+import { GoogleSignInLink } from "./google-sign-in";
 import styles from "./public.module.css";
 
 export default function PublicShell({ children }: { children: ReactNode }) {
@@ -11,7 +12,7 @@ export default function PublicShell({ children }: { children: ReactNode }) {
         <Link href="/" className={styles.brand} aria-label="Excela home">
           <Image src="/excela-r.png" alt="" width={34} height={34} priority /> excela<span className={styles.brandDot}>.</span>
         </Link>
-        <a href="/api/google/connect" className={styles.signIn}>Sign In <span aria-hidden="true">↗</span></a>
+        <GoogleSignInLink className={styles.signIn}>Sign In <span aria-hidden="true">↗</span></GoogleSignInLink>
       </header>
       {children}
       <footer className={styles.footer}>

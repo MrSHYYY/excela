@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Landing from "./components/landing";
+import { SIGN_IN_CHANNEL, startGoogleSignIn } from "./components/google-sign-in";
 
 const RELEVANT_KEYWORDS = [
   // Academic events
@@ -138,6 +139,31 @@ export default function Home() {
     }
     void loadSession();
     return () => { active = false; };
+  }, []);
+
+  // The sign-in popup reports the result here once Google sends the user back to Excela.
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
+    channel.onmessage = async (event: MessageEvent<{ status?: string }>) => {
+      const status = event.data?.status;
+      if (!status) return;
+      if (status !== "connected") {
+        setError(signInMessages[status] || "Please sign in with Google again.");
+        return;
+      }
+      setError("");
+      setNotice("");
+      try {
+        const result = await fetch("/api/google/status", { cache: "no-store" });
+        const data = await result.json();
+        if (result.ok) setSession(data);
+        else setError(data.error || "Could not load your session.");
+      } catch {
+        setError("Could not load your session. Check your connection and refresh.");
+      }
+    };
+    return () => channel.close();
   }, []);
 
   // Closes the settings menu on outside click or Escape.
@@ -545,7 +571,14 @@ export default function Home() {
             {!session.googleAccess && (
               <p role="alert" className="text-sm text-amber-700 dark:text-amber-400">
                 Excela&apos;s access to your Google Sheets has expired.{" "}
-                <a href="/api/google/connect?consent=1" className="font-medium underline">
+                <a
+                  href="/api/google/connect?consent=1"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    startGoogleSignIn(true);
+                  }}
+                  className="font-medium underline"
+                >
                   Sign in with Google again
                 </a>{" "}
                 to keep syncing.
