@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import Landing from "./components/landing";
 
 const RELEVANT_KEYWORDS = [
   // Academic events
@@ -378,6 +379,10 @@ export default function Home() {
     }
   }
 
+  if (!session?.authenticated) {
+    return <Landing pending={session === null} error={error} notice={notice} />;
+  }
+
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-16 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-8">
@@ -404,34 +409,6 @@ export default function Home() {
           <p role="status" className="text-emerald-700 dark:text-emerald-400">
             {notice}
           </p>
-        )}
-
-        {session === null && (
-          <p role="status" className="text-sm text-zinc-600 dark:text-zinc-400">
-            Loading…
-          </p>
-        )}
-
-        {session && !session.authenticated && (
-          <section className="flex flex-col gap-4 rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="font-semibold">Sign in to continue</h2>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Excela signs you in with Google and adds announcements to your own monthly planner in Google
-              Sheets. Google will ask you to allow access to Google Sheets so it can do that.
-            </p>
-            <a
-              href="/api/google/connect"
-              className="inline-flex items-center gap-3 self-start rounded-lg border border-zinc-300 bg-white px-5 py-3 font-medium text-zinc-900 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-800"
-            >
-              <svg aria-hidden="true" viewBox="0 0 48 48" className="h-5 w-5">
-                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-              </svg>
-              Continue with Google
-            </a>
-          </section>
         )}
 
         {session?.authenticated && (

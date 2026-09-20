@@ -1,0 +1,45 @@
+.shell { min-height: 100svh; display: flex; flex-direction: column; background: #090909; color: #f2f2f0; font-family: var(--font-geist-sans), Arial, sans-serif; padding: 0 6vw; color-scheme: dark; }
+.shell a { text-underline-offset: 5px; }
+.shell a:focus-visible, .shell button:focus-visible { outline: 2px solid #fff; outline-offset: 6px; }
+.header, .footer { width: 100%; max-width: 1160px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.header { min-height: 76px; flex-shrink: 0; border-bottom: 1px solid #242424; }
+.brand { display: inline-flex; align-items: center; gap: 10px; font-size: 25px; font-weight: 600; letter-spacing: -1px; text-decoration: none; }
+.brandDot { margin-left: -10px; color: #858585; }
+.signIn { display: inline-flex; align-items: center; gap: 20px; padding: 10px 17px; border: 1px solid #414141; border-radius: 6px; font-size: 12px; color: #eee; text-decoration: none; }
+.signIn:hover { background: #202020; border-color: #777; }
+.landing { width: 100%; max-width: 1160px; margin: 0 auto; padding: 24px 0; flex: 1; display: grid; align-items: center; }
+.hero { display: grid; grid-template-columns: 1.2fr 1fr; gap: 72px; align-items: center; }
+.eyebrow { font: 10px var(--font-geist-mono), monospace; letter-spacing: 1.6px; color: #a1a1a1; display: flex; align-items: center; gap: 9px; margin-bottom: 30px; }
+.statusDot { width: 5px; height: 5px; border-radius: 50%; background: #c3c9b2; }
+.copy h1 { font-size: clamp(38px, 4.4vw, 61px); line-height: 1.08; letter-spacing: -3px; font-weight: 500; }
+.copy h1 span { color: #858585; }
+.description { color: #aaa; font-size: 16px; line-height: 1.85; max-width: 405px; margin: 24px 0 30px; }
+.cta { display: inline-flex; align-items: center; justify-content: center; gap: 13px; background: #f1f1ee; color: #151515; border: 1px solid #f1f1ee; padding: 15px 20px; border-radius: 7px; font-size: 13px; font-weight: 600; text-decoration: none; transition: background 150ms; }
+.cta:hover { background: #d5d5d1; }
+.cta:disabled { opacity: .6; }
+.cta > span { margin-left: 15px; }
+.consent { margin-top: 17px; color: #919191; font-size: 11px; line-height: 1.8; }
+.error, .notice { margin-top: 18px; font-size: 13px; line-height: 1.6; max-width: 440px; }
+.error { color: #fda4af; }.notice { color: #c9d8ba; }
+.preview { border: 1px solid #303030; border-radius: 12px; background: #111; padding: 23px; box-shadow: 0 18px 70px #0005; }
+.previewTop { display: flex; justify-content: space-between; font: 9px var(--font-geist-mono), monospace; letter-spacing: 1.1px; color: #939393; margin-bottom: 25px; }
+.message { padding: 18px; background: #191919; border: 1px solid #2b2b2b; border-radius: 7px; }
+.tinyLabel { color: #979797; font: 9px var(--font-geist-mono), monospace; letter-spacing: .8px; }
+.message p { font-size: 14px; line-height: 1.8; margin-top: 9px; color: #d6d6d6; }
+.connector { display: flex; align-items: center; justify-content: center; gap: 12px; color: #888; height: 47px; }.connector span { width: 25px; height: 1px; background: #303030; }
+.calendar { border: 1px solid #303030; border-radius: 7px; overflow: hidden; }
+.calendarHeader { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 17px 14px; font-size: 13px; border-bottom: 1px solid #303030; }
+.muted { color: #858585; margin-left: 4px; }
+.calendarRow { display: flex; align-items: center; min-height: 56px; border-bottom: 1px solid #242424; }.calendarRow:last-child { border: 0; }
+.date { width: 65px; flex-shrink: 0; text-align: center; font: 16px var(--font-geist-mono), monospace; }.date small { display: block; color: #8d8d8d; font-size: 8px; margin-top: 3px; }
+.event { display: flex; align-items: center; gap: 13px; background: #991b1b; color: #fff; padding: 11px 12px; border-radius: 4px; flex: 1; margin-right: 11px; font-size: 11px; }.event strong { font-weight: 500; }.event > span:last-child { margin-left: auto; }
+.empty { color: #555; font-size: 12px; }
+.preview figcaption { font-size: 10px; color: #929292; margin-top: 17px; line-height: 1.6; }
+.footer { padding: 20px 0; flex-shrink: 0; border-top: 1px solid #242424; font-size: 11px; color: #969696; }.footer nav { display: flex; gap: 25px; }.footer a:hover { color: #fff; }
+.skip { position: absolute; left: 15px; top: -70px; background: white; color: black; padding: 12px; z-index: 10; }.skip:focus { top: 12px; }
+.legal { width: 100%; max-width: 730px; margin: 0 auto; padding: 54px 0 90px; }.back { color: #aaa; font-size: 12px; text-decoration: none; }.legal .eyebrow { margin-top: 55px; margin-bottom: 20px; }.legal h1 { font-size: clamp(36px, 6vw, 58px); line-height: 1.1; letter-spacing: -2px; font-weight: 500; }.legalIntro { font-size: 17px; line-height: 1.8; color: #aaa; margin-top: 22px; }.updated { font: 10px var(--font-geist-mono), monospace; color: #969696; margin-top: 24px; }.legalBody { margin-top: 40px; }.legalBody section { padding: 27px 0; border-top: 1px solid #292929; }.legalBody h2 { font-size: 17px; font-weight: 500; margin-bottom: 13px; }.legalBody p, .legalBody li { color: #aaa; font-size: 14px; line-height: 1.9; }.legalBody p + p { margin-top: 12px; }.legalBody ul { list-style: disc; padding-left: 20px; }.legalBody a { text-decoration: underline; color: #ddd; }
+@media (max-width: 850px) { .hero { gap: 32px; }.copy h1 { letter-spacing: -2px; }.preview { padding: 16px; }.event { gap: 7px; }.calendarHeader .tinyLabel { display: none; } }
+@media (max-width: 640px) { .shell { padding: 0 24px; }.header { min-height: 68px; }.landing { padding: 24px 0; }.hero { grid-template-columns: 1fr; gap: 0; }.copy h1 { font-size: clamp(32px, 8.4vw, 43px); letter-spacing: -1.8px; }.description { font-size: 14px; margin: 20px 0 24px; }.preview { display: none; }.footer { align-items: flex-start; flex-direction: column; gap: 12px; padding: 16px 0; }.legal { padding-top: 35px; }.legal .eyebrow { margin-top: 40px; } }
+@media (max-height: 700px) and (min-width: 641px) { .preview { padding: 16px; }.previewTop { margin-bottom: 14px; }.message { padding: 12px; }.connector { height: 30px; }.calendarRow { min-height: 42px; }.calendarHeader { padding: 12px; }.copy .eyebrow { margin-bottom: 18px; }.description { margin: 18px 0 22px; } }
+@media (max-height: 520px) { .landing .preview { display: none; }.hero { grid-template-columns: 1fr; }.copy h1 { font-size: 32px; }.copy .eyebrow { margin-bottom: 12px; }.description { margin: 12px 0; line-height: 1.5; }.consent { margin-top: 10px; }.landing { padding: 16px 0; } }
+@media (prefers-reduced-motion: reduce) { .cta { transition: none; } }
