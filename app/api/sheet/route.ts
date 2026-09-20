@@ -72,7 +72,7 @@ export async function PUT(request: Request) {
       { _id: current.user._id },
       { $set: { sheetId, sheetUrl, sheetTitle, updatedAt: new Date() } },
     );
-    return Response.json({ sheet: { url: sheetUrl, title: sheetTitle } }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ sheet: { url: sheetUrl, title: sheetTitle, generated: sheetId === current.user.generatedSheetId } }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return Response.json(
       { error: "Could not save your link. Check the database connection and try again." },

@@ -80,6 +80,17 @@ function passesInputFilter(message: string): boolean {
   });
 }
 
+type Pipeline = "academic" | "general";
+
+// General pipeline pre-filter: a task needs a date to be useful, so require a month name or a numeric
+// date before spending any AI tokens. (The Academic pipeline uses the keyword filter above.)
+function passesGeneralFilter(message: string): boolean {
+  return (
+    /\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sept?(ember)?|oct(ober)?|nov(ember)?|dec(ember)?)\b/i.test(message) ||
+    /\b\d{1,4}[/-]\d{1,2}\b/.test(message)
+  );
+}
+
 type ViewLink = { sheet: string; url: string; base: string; gid: number; row: number };
 
 // Google Sheets scrolls so the selected cell sits at the top of the window. Selecting a cell above the
@@ -106,7 +117,9 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   const [response, setResponse] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [provider, setProvider] = useState("ollama");
+  const [pipeline, setPipeline] = useState<Pipeline>("general");
+  const [outputTab, setOutputTab] = useState<"json" | "log">("json");
+  const [logs, setLogs] = useState<{ time: string; text: string; tone: "info" | "ok" | "error" }[]>([]);
   const [events, setEvents] = useState<{ course: string; title: string; date: string }[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
@@ -116,6 +129,8 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   const [savingSheet, setSavingSheet] = useState(false);
   const [editingSheet, setEditingSheet] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
   const [notice, setNotice] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -219,7 +234,21 @@ export default function HomeClient({ initialSession }: { initialSession: Session
     if (code === "no_sheet") setSession((current) => (current?.authenticated ? { ...current, sheet: null } : current));
   }
 
+  // One line per step of an injection, shown in the Output panel's LOG view.
+  function addLog(text: string, tone: "info" | "ok" | "error" = "info") {
+    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    setLogs((current) => [...current, { time, text, tone }]);
+  }
+
+  function choosePipeline(next: Pipeline) {
+    if (next === pipeline) return;
+    setPipeline(next);
+    setError("");
+    resetResults();
+  }
+
   function resetResults() {
+    setLogs([]);
     setViewLinks([]);
     setResponse("");
     setEvents([]);
@@ -238,6 +267,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
     setSidebarOpen(false);
     setError("");
     setEditingSheet(false);
+    setConfirmingReset(false);
     resetResults();
   }
 
@@ -290,15 +320,44 @@ export default function HomeClient({ initialSession }: { initialSession: Session
         throw new Error(data.error || "Unable to generate your template.");
       }
       setViewLinks([]);
-      setSession((current) => (current?.authenticated ? { ...current, sheet: data.sheet } : current));
+      setSession((current) => (current?.authenticated ? { ...current, sheet: data.sheet, hasGeneratedPlanner: true } : current));
       setEditingSheet(false);
       setSynced(false);
       setSyncMessage("");
-      setNotice("Your planner was created in your Google Drive and saved to your account. It will be used for future syncs.");
+      setNotice("Your Excela planner was created in your Google Drive and saved to your account. It will be used for future syncs.");
     } catch (error) {
       setError(error instanceof Error ? error.message : "Unable to generate your template.");
     } finally {
       setGenerating(false);
+    }
+  }
+
+  // Replaces the Excela-created planner with a fresh copy of the template (the server enforces the rules).
+  async function handleResetTemplate() {
+    if (resetting || savingSheet || generating) return;
+    setResetting(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await fetch("/api/sheet/reset", { method: "POST" });
+      const data = await result.json();
+      if (!result.ok) {
+        handleAuthCode(data.code);
+        throw new Error(data.error || "Unable to reset your planner.");
+      }
+      resetResults();
+      setSession((current) => (current?.authenticated ? { ...current, sheet: data.sheet, hasGeneratedPlanner: true } : current));
+      setEditingSheet(false);
+      setNotice(
+        data.oldTrashed === false
+          ? "Your planner was reset to a fresh template. The previous \u201cExcela\u201d file couldn\u2019t be moved to the trash automatically, so you can delete it in Google Drive."
+          : "Your planner was reset to a fresh template.",
+      );
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to reset your planner.");
+    } finally {
+      setResetting(false);
+      setConfirmingReset(false);
     }
   }
 
@@ -330,6 +389,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   // Writes events to the user's planner. Runs right after extraction (Inject) and for "Retry sync".
   async function runSync(list: { course: string; title: string; date: string }[]) {
     setSyncing(true);
+    addLog("Writing to your planner…");
     setSyncMessage("");
     setViewLinks([]);
     setError("");
@@ -346,8 +406,10 @@ export default function HomeClient({ initialSession }: { initialSession: Session
       }
       setSynced(true);
       setSyncMessage(`Injected: ${data.written} event(s) written, ${data.skipped} already present.`);
+      addLog(`Injected: ${data.written} event(s) written, ${data.skipped} already present.`, "ok");
       setViewLinks(Array.isArray(data.links) ? data.links : []);
     } catch (error) {
+      addLog(error instanceof Error ? error.message : "Unable to sync with Google Sheets.", "error");
       setError(error instanceof Error ? error.message : "Unable to sync with Google Sheets.");
     } finally {
       setSyncing(false);
@@ -376,14 +438,19 @@ export default function HomeClient({ initialSession }: { initialSession: Session
     // This happens BEFORE any request is sent to Gemini
     // or Ollama, so irrelevant messages cost zero AI tokens.
     // --------------------------------------------------
-    if (!passesInputFilter(trimmedMessage)) {
+    const passes = pipeline === "general" ? passesGeneralFilter(trimmedMessage) : passesInputFilter(trimmedMessage);
+    if (!passes) {
+      addLog(pipeline === "general" ? "Rejected: no date found in the message." : "Rejected: no academic keywords found in the message.", "error");
       setResponse(
-        "Rejected by input filter — this message does not appear to contain an academic event."
+        pipeline === "general"
+          ? "Rejected by input filter \u2014 this message does not appear to contain a date."
+          : "Rejected by input filter \u2014 this message does not appear to contain an academic event."
       );
       return;
     }
 
     setLoading(true);
+    addLog(`Reading your message with Ollama (${pipeline} pipeline)…`);
 
     try {
       const result = await fetch("/api/ai", {
@@ -393,7 +460,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
         },
         body: JSON.stringify({
           message: trimmedMessage,
-          provider,
+          pipeline,
         }),
       });
 
@@ -419,10 +486,12 @@ export default function HomeClient({ initialSession }: { initialSession: Session
           ? data.response
           : JSON.stringify(data.response, null, 2)
       );
+      addLog(extracted.length ? `Found ${extracted.length} event(s).` : "No events found in that message.", extracted.length ? "ok" : "info");
       // Inject = extract with AI, then write straight to the planner.
       if (extracted.length) await runSync(extracted);
       else setSyncMessage("No events were found in that message, so nothing was injected.");
     } catch (error) {
+      addLog(error instanceof Error ? error.message : "Something went wrong.", "error");
       setError(
         error instanceof Error
           ? error.message
@@ -493,8 +562,10 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                       );
                     }}
                     className={styles.sheetLink}
+                    aria-label="View your sheet"
                   >
-                    View your sheet
+                    <svg className={styles.sheetIcon} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>
+                    <span className={styles.sheetLabel}>View your sheet</span>
                   </a>
                 )}
                 <div ref={menuRef} className="relative">
@@ -602,17 +673,6 @@ export default function HomeClient({ initialSession }: { initialSession: Session
 
       <main id="dashboard-content" className={styles.main}>
         <div className={styles.content}>
-          <header className={styles.pageHeader}>
-            <div>
-              <p className={styles.eyebrow}>YOUR DAY, A LITTLE CLEARER</p>
-              <h1>Make room for <span>what matters.</span></h1>
-              <p className={styles.subtitle}>From the class chat to your planner. Paste it, plan it, get on with your day.</p>
-            </div>
-            <span className={styles.status} data-connected={Boolean(session.sheet && session.googleAccess)}>
-              <span />{!session.googleAccess ? "Reconnect Google" : session.sheet ? "Planner connected" : "Connect a planner"}
-            </span>
-          </header>
-
           {error && <p role="alert" className={styles.error}>{error}</p>}
           {notice && <p role="status" className={styles.notice}>{notice}</p>}
           {!session.googleAccess && (
@@ -628,53 +688,87 @@ export default function HomeClient({ initialSession }: { initialSession: Session
             <section className={styles.connectPanel} aria-labelledby="planner-heading">
               <div>
                 <p className={styles.eyebrow}>YOUR GOOGLE SHEET</p>
-                <h2 id="planner-heading">{session.sheet ? "Choose a different planner." : "A place for everything."}</h2>
-                <p className={styles.description}>Choose your monthly planner from Google Drive, or start fresh with our template.</p>
+                <h2 id="planner-heading">{session.sheet ? (session.sheet.generated ? "Change or reset your planner." : "Choose a different planner.") : "A place for everything."}</h2>
+                <p className={styles.description}>
+                  {!session.hasGeneratedPlanner
+                    ? "Choose your monthly planner from Google Drive, or start fresh with our template."
+                    : session.sheet?.generated
+                      ? "Choose a different planner from Google Drive, or reset your Excela planner to a fresh template."
+                      : "Choose a planner from Google Drive. Your Excela planner is the file named \u201cExcela\u201d; choose it to use it again and to reset it."}
+                </p>
                 <p className={styles.hint}>Existing planners need month tabs like “Sept 2026”.</p>
               </div>
               <div className={styles.connectActions}>
-                <button type="button" className={styles.primary} onClick={handleChooseSheet} disabled={savingSheet || generating || !session.googleAccess}>
+                <button type="button" className={styles.primary} onClick={handleChooseSheet} disabled={savingSheet || generating || resetting || !session.googleAccess}>
                   {savingSheet ? "Choosing planner…" : "Choose from Google Drive ↗"}
                 </button>
-                <button type="button" className={styles.secondary} onClick={handleGenerateTemplate} disabled={generating || savingSheet || !session.googleAccess}>
-                  {generating ? "Generating your planner…" : "Generate template +"}
-                </button>
-                {session.sheet && <button type="button" className={styles.textButton} disabled={savingSheet || generating} onClick={() => { setEditingSheet(false); setError(""); }}>Cancel</button>}
+                {!session.hasGeneratedPlanner && (
+                  <button type="button" className={styles.secondary} onClick={handleGenerateTemplate} disabled={generating || savingSheet || resetting || !session.googleAccess}>
+                    {generating ? "Generating your planner…" : "Generate template +"}
+                  </button>
+                )}
+                {session.sheet?.generated && (confirmingReset ? (
+                  <>
+                    <p className={styles.hint}>This replaces your Excela planner with a fresh template. Everything currently in it will be lost, and the old file moves to your Drive trash.</p>
+                    <button type="button" className={styles.primary} onClick={handleResetTemplate} disabled={resetting || !session.googleAccess}>
+                      {resetting ? "Resetting your planner…" : "Yes, reset planner"}
+                    </button>
+                    <button type="button" className={styles.textButton} disabled={resetting} onClick={() => setConfirmingReset(false)}>Keep my planner</button>
+                  </>
+                ) : (
+                  <button type="button" className={styles.secondary} onClick={() => setConfirmingReset(true)} disabled={savingSheet || generating || !session.googleAccess}>
+                    Reset template ↺
+                  </button>
+                ))}
+                {session.sheet && <button type="button" className={styles.textButton} disabled={savingSheet || generating || resetting} onClick={() => { setEditingSheet(false); setConfirmingReset(false); setError(""); }}>Cancel</button>}
               </div>
             </section>
           )}
 
           {session.sheet && !editingSheet && <div className={styles.workspace}>
-            <section className={styles.panel} aria-labelledby="announcement-heading">
-              <div className={styles.panelHeading}><span className={styles.eyebrow}>01 / THE ANNOUNCEMENT</span><span className={styles.smallMark} aria-hidden="true">↗</span></div>
-              <h2 id="announcement-heading">What’s coming up?</h2>
-              <p className={styles.description}>Paste a class announcement. We’ll find the course, event, and date.</p>
+            <section className={styles.panel} aria-labelledby="input-heading">
+              <div className={styles.tabBar}>
+                <h2 id="input-heading">Input</h2>
+                <div className={styles.segmented} role="group" aria-label="Input type">
+                  <button type="button" aria-pressed={pipeline === "general"} data-active={pipeline === "general"} disabled={loading || syncing} onClick={() => choosePipeline("general")}>General</button>
+                  <button type="button" aria-pressed={pipeline === "academic"} data-active={pipeline === "academic"} disabled={loading || syncing} onClick={() => choosePipeline("academic")}>Academic</button>
+                </div>
+              </div>
               <form onSubmit={handleSubmit} className={styles.form}>
-                <label htmlFor="message">Announcement</label>
-                <textarea id="message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="CSE340 Quiz 4 is on Sept 27. Don't forget!" rows={7} required disabled={loading || syncing || !session.sheet} />
+                <textarea id="message" aria-label={pipeline === "general" ? "Task" : "Announcement"} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={pipeline === "general" ? "Dry clean the suit on Sept 4" : "CSE340 Quiz 4 is on Sept 27. Don't forget!"} rows={7} required disabled={loading || syncing || !session.sheet} />
                 <div className={styles.formFooter}>
-                  <div className={styles.modelField}>
-                    <label htmlFor="provider">AI provider</label>
-                    <select id="provider" value={provider} disabled={loading || syncing} onChange={(event) => { setProvider(event.target.value); setError(""); resetResults(); }}>
-                      <option value="ollama">Ollama · gemma4:31b</option>
-                      <option value="gemini">Gemini · Flash</option>
-                    </select>
-                  </div>
                   <button type="submit" className={styles.primary} disabled={loading || syncing || savingSheet || generating || !session.googleAccess || !session.sheet}>
-                    {loading ? "Reading…" : syncing ? "Writing…" : "Inject ↗"}
+                    {loading ? "Injecting…" : syncing ? "Injecting…" : "Inject ↗"}
                   </button>
                 </div>
                 <p className={styles.hint}>{session.sheet ? "Events go straight to the matching dates in your planner." : "Connect or generate a planner to get started."}</p>
               </form>
             </section>
 
-            <section className={styles.panel} aria-labelledby="result-heading" aria-live="polite" aria-busy={loading || syncing}>
-              <div className={styles.panelHeading}><span className={styles.eyebrow}>02 / YOUR PLANNER ENTRY</span><span className={styles.smallMark} aria-hidden="true">↙</span></div>
-              <h2 id="result-heading">{synced ? "One less thing to remember." : "The details, sorted."}</h2>
-              <p className={styles.description}>{synced ? "Your announcement is in your planner." : "Extracted events and sync results appear here."}</p>
+            <section className={styles.panel} aria-labelledby="output-heading" aria-live="polite" aria-busy={loading || syncing}>
+              <div className={styles.tabBar}>
+                <h2 id="output-heading">Output</h2>
+                <div className={styles.segmented} role="group" aria-label="Output view">
+                  <button type="button" aria-pressed={outputTab === "json"} data-active={outputTab === "json"} onClick={() => setOutputTab("json")}>JSON</button>
+                  <button type="button" aria-pressed={outputTab === "log"} data-active={outputTab === "log"} onClick={() => setOutputTab("log")}>LOG</button>
+                </div>
+              </div>
               {(loading || syncing) && <p role="status" className={styles.processing}>{syncing ? "Writing to your planner…" : "Reading your announcement…"}</p>}
               {syncMessage && <p role="status" className={styles.notice}>{syncMessage}</p>}
-              {response ? (
+              {outputTab === "log" ? (
+                logs.length ? (
+                  <ol className={styles.log} aria-label="Injection log">
+                    {logs.map((entry, index) => (
+                      <li key={index} data-tone={entry.tone}><time>{entry.time}</time><span>{entry.text}</span></li>
+                    ))}
+                  </ol>
+                ) : (
+                  <div className={styles.emptyState}>
+                    <p>No activity yet.</p>
+                    <span>Each step of an injection is listed here.</span>
+                  </div>
+                )
+              ) : response ? (
                 <pre className={styles.response}>{response}</pre>
               ) : (
                 <div className={styles.emptyState}>

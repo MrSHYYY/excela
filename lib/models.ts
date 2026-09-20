@@ -15,6 +15,10 @@ export type UserDoc = {
   sheetUrl?: string;
   sheetId?: string;
   sheetTitle?: string;
+  /** Id of the planner Excela created for this user (named "Excela"). Set once; it blocks creating a second one and marks the only planner that Reset may replace. */
+  generatedSheetId?: string;
+  /** Short lock while a planner is being created or reset, so two requests can't both create one. */
+  plannerLockUntil?: Date;
   createdAt: Date;
   updatedAt: Date;
   lastLoginAt: Date;

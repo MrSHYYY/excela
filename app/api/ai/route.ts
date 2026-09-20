@@ -1,14 +1,13 @@
-import { ApiError, GoogleGenAI } from "@google/genai";
-import { academicExtractionInstruction } from "@/ai/instructions";
+import { isPipelineId, pipelines } from "@/ai/pipelines";
 import { getSessionUser } from "@/lib/auth";
 
 // The AI call can take a while (Ollama has a 60s timeout); this lets Vercel run the function that long.
 export const maxDuration = 60;
 
 const fields = ["course", "title", "date"] as const;
-type AcademicEvent = Record<(typeof fields)[number], string>;
+type PlannerEvent = Record<(typeof fields)[number], string>;
 
-function isAcademicEvent(value: unknown): value is AcademicEvent {
+function isPlannerEvent(value: unknown): value is PlannerEvent {
   return typeof value === "object" && value !== null && !Array.isArray(value) &&
     fields.every((field) => typeof (value as Record<string, unknown>)[field] === "string");
 }
@@ -44,93 +43,77 @@ export async function POST(request: Request) {
     );
   }
 
-  const provider = "provider" in body ? body.provider : "gemini";
-  if (provider !== "gemini" && provider !== "ollama") {
-    return Response.json({ error: "Choose gemini or ollama." }, { status: 400 });
+  // Which instruction set reads the message: "academic" (default) or "general".
+  const pipeline = "pipeline" in body ? body.pipeline : "academic";
+  if (!isPipelineId(pipeline)) {
+    return Response.json({ error: "Choose the academic or general pipeline." }, { status: 400 });
   }
-  const providerName = provider === "ollama" ? "Ollama" : "Gemini";
-  const keyName = provider === "ollama" ? "OLLAMA_API" : "GEMINI_API";
-  const apiKey = provider === "ollama" ? process.env.OLLAMA_API : process.env.GEMINI_API;
+  const apiKey = process.env.OLLAMA_API;
   if (!apiKey) {
     return Response.json(
-      { error: `${keyName} is not configured.` },
+      { error: "OLLAMA_API is not configured." },
       { status: 500 },
     );
   }
 
   try {
-    const config = {
-        systemInstruction: academicExtractionInstruction,
-        responseMimeType: "application/json",
-        responseJsonSchema: {
-          type: "object",
-          properties: {
-            accepted: { type: "boolean" },
-            events: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: Object.fromEntries(fields.map((field) => [field, { type: "string" }])),
-                required: [...fields],
-                additionalProperties: false,
-              },
-            },
+    const schema = {
+      type: "object",
+      properties: {
+        accepted: { type: "boolean" },
+        events: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: Object.fromEntries(fields.map((field) => [field, { type: "string" }])),
+            required: [...fields],
+            additionalProperties: false,
           },
-          required: ["accepted", "events"],
-          additionalProperties: false,
         },
+      },
+      required: ["accepted", "events"],
+      additionalProperties: false,
     };
 
-    let text: string | undefined;
-    if (provider === "ollama") {
-      const result = await fetch("https://ollama.com/api/chat", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          // Direct cloud API uses the model name without the CLI's -cloud suffix.
-          model: "gemma4:31b",
-          stream: false,
-          messages: [
-            {
-              role: "system",
-              content: `${config.systemInstruction}\nReturn only a JSON object, without Markdown or commentary, matching this schema: ${JSON.stringify(config.responseJsonSchema)}`,
-            },
-            { role: "user", content: body.message },
-          ],
-        }),
-        signal: AbortSignal.timeout(60_000),
-      });
-      if (!result.ok) {
-        const errors: Record<number, string> = {
-          401: "Ollama authentication failed. Check OLLAMA_API on the server.",
-          402: "Ollama requires paid usage for this request (402). Unused free usage does not guarantee access to this model. Check model access in your Ollama account or select Gemini.",
-          403: "Ollama denied access. Check your API key and model access.",
-          404: "Ollama could not find gemma4:31b.",
-          429: "Ollama quota or rate limit reached. Please try again later.",
-        };
-        return Response.json(
-          { error: errors[result.status] || `Ollama request failed (${result.status}). Please try again later.` },
-          { status: result.status === 429 ? 429 : 502 },
-        );
-      }
-      const data = await result.json();
-      text = typeof data.message?.content === "string" ? data.message.content : undefined;
-    } else {
-      const ai = new GoogleGenAI({ apiKey });
-      const result = await ai.models.generateContent({
-        model: "gemini-flash-latest",
-        contents: body.message,
-        config,
-      });
-      text = result.text;
+    const result = await fetch("https://ollama.com/api/chat", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        // Direct cloud API uses the model name without the CLI's -cloud suffix.
+        model: "gemma4:31b",
+        stream: false,
+        messages: [
+          {
+            role: "system",
+            content: `${pipelines[pipeline].instruction}\nReturn only a JSON object, without Markdown or commentary, matching this schema: ${JSON.stringify(schema)}`,
+          },
+          { role: "user", content: body.message },
+        ],
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!result.ok) {
+      const errors: Record<number, string> = {
+        401: "Ollama authentication failed. Check OLLAMA_API on the server.",
+        402: "Ollama requires paid usage for this request (402). Unused free usage does not guarantee access to this model. Check model access in your Ollama account.",
+        403: "Ollama denied access. Check your API key and model access.",
+        404: "Ollama could not find gemma4:31b.",
+        429: "Ollama quota or rate limit reached. Please try again later.",
+      };
+      return Response.json(
+        { error: errors[result.status] || `Ollama request failed (${result.status}). Please try again later.` },
+        { status: result.status === 429 ? 429 : 502 },
+      );
     }
+    const data = await result.json();
+    const text: string | undefined = typeof data.message?.content === "string" ? data.message.content : undefined;
 
     if (!text) {
       return Response.json(
-        { error: `${providerName} returned no text.` },
+        { error: "Ollama returned no text." },
         { status: 502 },
       );
     }
@@ -140,7 +123,7 @@ export async function POST(request: Request) {
       extracted = JSON.parse(text.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i, "$1"));
     } catch {
       return Response.json(
-        { error: `${providerName} returned invalid JSON. Please try again.` },
+        { error: "Ollama returned invalid JSON. Please try again." },
         { status: 502 },
       );
     }
@@ -153,7 +136,7 @@ export async function POST(request: Request) {
       !Array.isArray(extracted.events)
     ) {
       return Response.json(
-        { error: `${providerName} returned an unexpected JSON format. Please try again.` },
+        { error: "Ollama returned an unexpected JSON format. Please try again." },
         { status: 502 },
       );
     }
@@ -165,10 +148,10 @@ export async function POST(request: Request) {
     if (
       !extracted.accepted ||
       extracted.events.length === 0 ||
-      !extracted.events.every(isAcademicEvent)
+      !extracted.events.every(isPlannerEvent)
     ) {
       return Response.json(
-        { error: `${providerName} returned an unexpected event format. Please try again.` },
+        { error: "Ollama returned an unexpected event format. Please try again." },
         { status: 502 },
       );
     }
@@ -185,7 +168,7 @@ export async function POST(request: Request) {
         parsedDate.toISOString().slice(0, 10) !== fullDate
       ) {
         return Response.json(
-          { error: `${providerName} returned an invalid event date or title. Please try again.` },
+          { error: "Ollama returned an invalid event date or title. Please try again." },
           { status: 502 },
         );
       }
@@ -194,31 +177,9 @@ export async function POST(request: Request) {
     return Response.json({
       response: { events: events.map((event) => Object.fromEntries(fields.map((field) => [field, event[field]]))) },
     });
-  } catch (error) {
-    if (error instanceof ApiError) {
-      // Keep provider details on the server and redact the API key.
-      console.error("Gemini API error", {
-        status: error.status,
-        message: error.message.replaceAll(apiKey, "[REDACTED]"),
-      });
-
-      const messages: Record<number, string> = {
-        400: "Gemini rejected the request (400). Check the server terminal for details.",
-        401: "Gemini authentication failed (401). Check GEMINI_API on the server.",
-        403: "Gemini denied access (403). Check the API key and project permissions.",
-        404: "The configured Gemini model was not found (404).",
-        429: "Gemini quota or rate limit reached (429). Check your quota or try again later.",
-        500: "Gemini encountered a server error (500). Please try again later.",
-        503: "Gemini is temporarily unavailable (503). Please try again later.",
-      };
-      return Response.json(
-        { error: messages[error.status] || `Gemini request failed (${error.status}). Check the server terminal for details.` },
-        { status: error.status === 429 ? 429 : 502 },
-      );
-    }
-
+  } catch {
     return Response.json(
-      { error: `Could not connect to ${providerName} or process its response. The request may have timed out. Please try again.` },
+      { error: "Could not connect to Ollama or process its response. The request may have timed out. Please try again." },
       { status: 502 },
     );
   }

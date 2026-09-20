@@ -8,7 +8,9 @@ export type Session =
   | {
       authenticated: true;
       user: { name: string; email: string; picture: string | null };
-      sheet: { url: string; title: string } | null;
+      sheet: { url: string; title: string; generated: boolean } | null;
+      /** True once Excela has created a planner for this user. It can then only be reset, never created again. */
+      hasGeneratedPlanner: boolean;
       googleAccess: boolean;
     };
 
@@ -16,7 +18,10 @@ export function sessionPayload(user: UserDoc): Session {
   return {
     authenticated: true,
     user: { name: user.name, email: user.email, picture: user.picture },
-    sheet: user.sheetId && user.sheetUrl ? { url: user.sheetUrl, title: user.sheetTitle ?? "Planner" } : null,
+    sheet: user.sheetId && user.sheetUrl
+      ? { url: user.sheetUrl, title: user.sheetTitle ?? "Planner", generated: user.generatedSheetId === user.sheetId }
+      : null,
+    hasGeneratedPlanner: Boolean(user.generatedSheetId),
     googleAccess: Boolean(user.googleScopes?.includes(driveFileScope) && user.refreshToken && decrypt(user.refreshToken)),
   };
 }

@@ -49,7 +49,7 @@ remove Excela from https://myaccount.google.com/connections, reconnect in Excela
 and select the existing planner again. This does not delete the planner.
 
 Picker receives a short-lived access token in browser memory. Refresh tokens,
-OAuth client secrets, and Gemini/Ollama keys remain on the server.
+OAuth client secrets, and the Ollama key remain on the server.
 
 ## Verification to run with approval
 
