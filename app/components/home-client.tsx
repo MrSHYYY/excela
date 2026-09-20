@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import styles from "./dashboard.module.css";
+import publicStyles from "./public.module.css";
 import Landing from "./landing";
 import { SIGN_IN_CHANNEL, startGoogleSignIn } from "./google-sign-in";
 import type { Session } from "@/lib/session-payload";
@@ -105,7 +109,17 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    function closeSidebar(event: KeyboardEvent) {
+      if (event.key === "Escape") setSidebarOpen(false);
+    }
+    document.addEventListener("keydown", closeSidebar);
+    return () => document.removeEventListener("keydown", closeSidebar);
+  }, [sidebarOpen]);
 
   useEffect(() => {
     let active = true;
@@ -210,6 +224,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
     setNotice("");
     setConfirmingDelete(false);
     setMenuOpen(false);
+    setSidebarOpen(false);
     setError("");
     setEditingSheet(false);
     resetResults();
@@ -412,37 +427,28 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   }
 
   return (
-    <main className="min-h-screen bg-zinc-50 px-6 py-16 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-8">
-        <header>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Excela
-          </h1>
-
-          <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-            Turn a class announcement into JSON for Google Sheets.
-          </p>
-        </header>
-
-        {error && (
-          <p
-            role="alert"
-            className="text-red-600 dark:text-red-400"
+    <div className={styles.dashboard} data-sidebar-open={sidebarOpen}>
+      <a href="#dashboard-content" className={styles.skip}>Skip to dashboard</a>
+      <header className={styles.navbar}>
+        <nav className={styles.navigation} aria-label="Main navigation">
+          <Link href="/" className={publicStyles.brand} aria-label="Excela home">
+            <Image src="/excela-r.png" alt="" width={34} height={34} priority />
+            excela<span className={publicStyles.brandDot}>.</span>
+          </Link>
+          <button
+            type="button"
+            className={styles.menuToggle}
+            aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            aria-expanded={sidebarOpen}
+            aria-controls="dashboard-sidebar"
+            onClick={() => setSidebarOpen((open) => !open)}
           >
-            {error}
-          </p>
-        )}
-
-        {notice && (
-          <p role="status" className="text-emerald-700 dark:text-emerald-400">
-            {notice}
-          </p>
-        )}
-
-        {session?.authenticated && (
-          <>
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex items-center gap-3">
+            <span /><span /><span />
+          </button>
+        </nav>
+        <span className={styles.navTitle}>Your workspace</span>
+            <div className={styles.account}>
+              <div className={styles.identity}>
                 {session.user.picture && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -454,9 +460,9 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                     className="h-9 w-9 rounded-full"
                   />
                 )}
-                <div className="text-sm">
+                <div className={styles.identityText}>
                   <p className="font-medium">{session.user.name}</p>
-                  <p className="text-zinc-600 dark:text-zinc-400">{session.user.email}</p>
+                  <p className="text-zinc-400 dark:text-zinc-400">{session.user.email}</p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-3">
@@ -475,7 +481,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                         "noopener,noreferrer",
                       );
                     }}
-                    className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+                    className={styles.sheetLink}
                   >
                     View your sheet
                   </a>
@@ -490,7 +496,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                       setMenuOpen((open) => !open);
                       setConfirmingDelete(false);
                     }}
-                    className="rounded-lg border border-zinc-300 p-2 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                    className="rounded-lg border border-zinc-700 p-2 hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-700 dark:hover:bg-zinc-800"
                   >
                     <svg
                       aria-hidden="true"
@@ -513,14 +519,14 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                     <div
                       role="menu"
                       aria-label="Account settings"
-                      className="absolute right-0 top-full z-10 mt-2 w-72 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
+                      className="absolute right-0 top-full z-10 mt-2 w-72 rounded-xl border border-zinc-800 bg-zinc-900 p-2 shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
                     >
                       {confirmingDelete ? (
                         <div className="flex flex-col gap-3 p-2">
-                          <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">
+                          <p role="alert" className="text-sm font-medium text-red-400 dark:text-red-400">
                             Delete your account?
                           </p>
-                          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                          <p className="text-sm text-zinc-400 dark:text-zinc-400">
                             This permanently deletes your Excela account and everything Excela stores about you: your
                             profile, saved planner link, Google access and sign-in sessions. Your Google Sheets are not
                             changed or deleted. This cannot be undone.
@@ -538,7 +544,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                               type="button"
                               onClick={() => setConfirmingDelete(false)}
                               disabled={deleting}
-                              className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium hover:bg-zinc-800 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
                             >
                               Cancel
                             </button>
@@ -550,7 +556,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                             type="button"
                             role="menuitem"
                             onClick={handleSignOut}
-                            className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                            className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium hover:bg-zinc-800 dark:hover:bg-zinc-800"
                           >
                             Sign out
                           </button>
@@ -558,7 +564,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                             type="button"
                             role="menuitem"
                             onClick={() => setConfirmingDelete(true)}
-                            className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+                            className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-red-400 hover:bg-red-950 dark:text-red-400 dark:hover:bg-red-950"
                           >
                             Delete account
                           </button>
@@ -570,211 +576,111 @@ export default function HomeClient({ initialSession }: { initialSession: Session
               </div>
             </div>
 
-            {!session.googleAccess && (
-              <p role="alert" className="text-sm text-amber-700 dark:text-amber-400">
-                Reconnect Google to allow access to planners you create or select in Excela.{" "}
-                <a
-                  href="/api/google/connect?consent=1"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    startGoogleSignIn(true);
-                  }}
-                  className="font-medium underline"
-                >
-                  Sign in with Google again
-                </a>{" "}
-                to keep syncing.
-              </p>
-            )}
 
-            {(!session.sheet || editingSheet) && (
-              <div
-                className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
-              >
-                <h2 className="font-semibold">
-                  {session.sheet ? "Change your planner" : "Choose your planner"}
-                </h2>
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                  Choose your monthly planner (tabs named like “Sept 2026”) from Google Drive.
-                  Excela can access files you select or create with it and saves your choice to your account.
-                </p>
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={handleChooseSheet}
-                    disabled={savingSheet || generating || !session.googleAccess}
-                    className="rounded-lg bg-blue-600 px-5 py-2.5 font-medium text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {savingSheet ? "Choosing planner…" : "Choose from Google Drive"}
-                  </button>
-                  {session.sheet && (
-                    <button
-                      type="button"
-                      disabled={savingSheet || generating}
-                      onClick={() => { setEditingSheet(false); setError(""); }}
-                      className="rounded-lg border border-zinc-300 px-5 py-2.5 font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-                <div className="mt-2 flex flex-col gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                    No planner yet? Excela can create one in your Google Drive from its template and use it for
-                    future syncs.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleGenerateTemplate}
-                    disabled={generating || savingSheet || !session.googleAccess}
-                    className="self-start rounded-lg border border-zinc-300 px-5 py-2.5 font-medium hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                  >
-                    {generating ? "Generating… this can take a few seconds" : "Generate template"}
-                  </button>
-                </div>
+      </header>
+
+      <aside id="dashboard-sidebar" aria-label="Sidebar" aria-hidden={!sidebarOpen} inert={!sidebarOpen} className={styles.sidebar}>
+        <nav aria-label="Planner settings" className={styles.sidebarNav}>
+          <button type="button" className={styles.sidebarAction} disabled={loading || syncing || savingSheet || generating} onClick={() => { setEditingSheet(true); setSidebarOpen(false); setError(""); }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M4 7h15m-4-4 4 4-4 4M20 17H5m4-4-4 4 4 4" /></svg>
+            {session.sheet ? "Change planner" : "Connect planner"}
+          </button>
+        </nav>
+      </aside>
+      {sidebarOpen && <button type="button" className={styles.backdrop} aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} />}
+
+      <main id="dashboard-content" className={styles.main}>
+        <div className={styles.content}>
+          <header className={styles.pageHeader}>
+            <div>
+              <p className={styles.eyebrow}>YOUR DAY, A LITTLE CLEARER</p>
+              <h1>Make room for <span>what matters.</span></h1>
+              <p className={styles.subtitle}>From the class chat to your planner. Paste it, plan it, get on with your day.</p>
+            </div>
+            <span className={styles.status} data-connected={Boolean(session.sheet && session.googleAccess)}>
+              <span />{!session.googleAccess ? "Reconnect Google" : session.sheet ? "Planner connected" : "Connect a planner"}
+            </span>
+          </header>
+
+          {error && <p role="alert" className={styles.error}>{error}</p>}
+          {notice && <p role="status" className={styles.notice}>{notice}</p>}
+          {!session.googleAccess && (
+            <p role="alert" className={styles.warning}>
+              Reconnect Google to access your planner.{" "}
+              <a href="/api/google/connect?consent=1" onClick={(event) => { event.preventDefault(); startGoogleSignIn(true); }}>
+                Sign in with Google again ↗
+              </a>
+            </p>
+          )}
+
+          {(!session.sheet || editingSheet) && (
+            <section className={styles.connectPanel} aria-labelledby="planner-heading">
+              <div>
+                <p className={styles.eyebrow}>YOUR GOOGLE SHEET</p>
+                <h2 id="planner-heading">{session.sheet ? "Choose a different planner." : "A place for everything."}</h2>
+                <p className={styles.description}>Choose your monthly planner from Google Drive, or start fresh with our template.</p>
+                <p className={styles.hint}>Existing planners need month tabs like “Sept 2026”.</p>
               </div>
-            )}
+              <div className={styles.connectActions}>
+                <button type="button" className={styles.primary} onClick={handleChooseSheet} disabled={savingSheet || generating || !session.googleAccess}>
+                  {savingSheet ? "Choosing planner…" : "Choose from Google Drive ↗"}
+                </button>
+                <button type="button" className={styles.secondary} onClick={handleGenerateTemplate} disabled={generating || savingSheet || !session.googleAccess}>
+                  {generating ? "Generating your planner…" : "Generate template +"}
+                </button>
+                {session.sheet && <button type="button" className={styles.textButton} disabled={savingSheet || generating} onClick={() => { setEditingSheet(false); setError(""); }}>Cancel</button>}
+              </div>
+            </section>
+          )}
 
-            {session.sheet && (
-              <>
-                {!editingSheet && (
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                    Planner:{" "}
-                    <a
-                      href={session.sheet.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-medium text-zinc-900 underline dark:text-zinc-100"
-                    >
-                      {session.sheet.title}
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => { setEditingSheet(true); setError(""); }}
-                      className="ml-3 underline"
-                    >
-                      Change
-                    </button>
-                  </p>
-                )}
-
-                <form
-                  onSubmit={handleSubmit}
-                  className="flex flex-col gap-4"
-                >
-                  <label htmlFor="provider" className="font-medium">
-                    AI model
-                  </label>
-
-                  <select
-                    id="provider"
-                    value={provider}
-                    disabled={loading || syncing}
-                    onChange={(event) => {
-                      setProvider(event.target.value);
-                      setError("");
-                      resetResults();
-                    }}
-                    className="w-full rounded-xl border border-zinc-300 bg-white p-3 focus:ring-2 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-900"
-                  >
-                    <option value="ollama">
-                      Ollama — gemma4:31b
-                    </option>
-
-                    <option value="gemini">
-                      Gemini — Flash
-                    </option>
-                  </select>
-
-                  <label htmlFor="message" className="font-medium">
-                    Your message
-                  </label>
-
-                  <textarea
-                    id="message"
-                    value={message}
-                    onChange={(event) => setMessage(event.target.value)}
-                    placeholder="Example: CSE340 QUIZ4 SEPT 27"
-                    rows={5}
-                    required
-                    disabled={loading || syncing}
-                    className="w-full resize-y rounded-xl border border-zinc-300 bg-white p-4 outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900"
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={loading || syncing || !session.googleAccess}
-                    className="self-start rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {loading || syncing ? "Injecting…" : "Inject"}
+          {session.sheet && !editingSheet && <div className={styles.workspace}>
+            <section className={styles.panel} aria-labelledby="announcement-heading">
+              <div className={styles.panelHeading}><span className={styles.eyebrow}>01 / THE ANNOUNCEMENT</span><span className={styles.smallMark} aria-hidden="true">↗</span></div>
+              <h2 id="announcement-heading">What’s coming up?</h2>
+              <p className={styles.description}>Paste a class announcement. We’ll find the course, event, and date.</p>
+              <form onSubmit={handleSubmit} className={styles.form}>
+                <label htmlFor="message">Announcement</label>
+                <textarea id="message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="CSE340 Quiz 4 is on Sept 27. Don't forget!" rows={7} required disabled={loading || syncing || !session.sheet} />
+                <div className={styles.formFooter}>
+                  <div className={styles.modelField}>
+                    <label htmlFor="provider">AI provider</label>
+                    <select id="provider" value={provider} disabled={loading || syncing} onChange={(event) => { setProvider(event.target.value); setError(""); resetResults(); }}>
+                      <option value="ollama">Ollama · gemma4:31b</option>
+                      <option value="gemini">Gemini · Flash</option>
+                    </select>
+                  </div>
+                  <button type="submit" className={styles.primary} disabled={loading || syncing || savingSheet || generating || !session.googleAccess || !session.sheet}>
+                    {loading ? "Reading…" : syncing ? "Writing…" : "Inject ↗"}
                   </button>
-                </form>
+                </div>
+                <p className={styles.hint}>{session.sheet ? "Events go straight to the matching dates in your planner." : "Connect or generate a planner to get started."}</p>
+              </form>
+            </section>
 
-                <section
-                  aria-live="polite"
-                  aria-busy={loading || syncing}
-                  className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
-                >
-                  {(loading || syncing || syncMessage || viewLinks.length > 0 || (events.length > 0 && !synced)) && (
-                    <div className="mb-5 flex flex-col items-start gap-3">
-                      {(loading || syncing) && (
-                        <p role="status" className="text-sm text-zinc-600 dark:text-zinc-400">
-                          {syncing ? "Writing to your planner…" : "Reading your announcement…"}
-                        </p>
-                      )}
-                      {syncMessage && (
-                        <p
-                          role="status"
-                          className={`text-sm ${synced ? "text-emerald-700 dark:text-emerald-400" : "text-zinc-600 dark:text-zinc-400"}`}
-                        >
-                          {syncMessage}
-                        </p>
-                      )}
-                      {viewLinks.length > 0 && (
-                        <div className="flex flex-wrap gap-3">
-                          {viewLinks.map((link) => (
-                            <a
-                              key={link.url}
-                              href={link.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="rounded-lg border border-emerald-700 px-5 py-3 font-medium text-emerald-800 hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 dark:border-emerald-500 dark:text-emerald-300 dark:hover:bg-emerald-950"
-                            >
-                              {viewLinks.length > 1 ? `View changes in ${link.sheet}` : "View changes"}
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                      {events.length > 0 && !synced && !loading && !syncing && (
-                        <button
-                          type="button"
-                          onClick={handleSync}
-                          disabled={!session.googleAccess}
-                          className="rounded-lg bg-emerald-700 px-5 py-3 font-medium text-white hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Retry sync
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  <h2 className="font-semibold">
-                    {provider === "ollama"
-                      ? "Ollama"
-                      : "Gemini"}{" "}
-                    response
-                  </h2>
-
-                  <pre className="mt-3 whitespace-pre-wrap break-words font-mono text-sm text-zinc-600 dark:text-zinc-300">
-                    {loading && !response
-                      ? "Processing your announcement…"
-                      : response || "Your reply will appear here."}
-                  </pre>
-                </section>
-              </>
-            )}
-          </>
-        )}
-      </div>
-    </main>
+            <section className={styles.panel} aria-labelledby="result-heading" aria-live="polite" aria-busy={loading || syncing}>
+              <div className={styles.panelHeading}><span className={styles.eyebrow}>02 / YOUR PLANNER ENTRY</span><span className={styles.smallMark} aria-hidden="true">↙</span></div>
+              <h2 id="result-heading">{synced ? "One less thing to remember." : "The details, sorted."}</h2>
+              <p className={styles.description}>{synced ? "Your announcement is in your planner." : "Extracted events and sync results appear here."}</p>
+              {(loading || syncing) && <p role="status" className={styles.processing}>{syncing ? "Writing to your planner…" : "Reading your announcement…"}</p>}
+              {syncMessage && <p role="status" className={styles.notice}>{syncMessage}</p>}
+              {response ? (
+                <pre className={styles.response}>{response}</pre>
+              ) : (
+                <div className={styles.emptyState}>
+                  <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="3" /><path d="M8 3v4m8-4v4M4 11h16m-11 5h6" /></svg>
+                  <p>Your next plan starts here.</p>
+                  <span>Paste an announcement to turn it into a planner entry.</span>
+                </div>
+              )}
+              <div className={styles.resultActions}>
+                {viewLinks.map((link) => <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer" className={styles.secondary}>{viewLinks.length > 1 ? 'View changes in ' + link.sheet : "View changes"} ↗</a>)}
+                {events.length > 0 && !synced && !loading && !syncing && <button type="button" className={styles.primary} onClick={handleSync} disabled={!session.googleAccess}>Retry sync ↗</button>}
+              </div>
+            </section>
+          </div>}
+          <footer className={styles.footer}><span>Your sheet. A little less to remember.</span><nav aria-label="Legal"><Link href="/privacy">Privacy policy</Link><Link href="/terms">Terms of service</Link></nav></footer>
+        </div>
+      </main>
+    </div>
   );
 }
