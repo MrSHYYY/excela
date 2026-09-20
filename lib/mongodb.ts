@@ -10,7 +10,8 @@ export function getDb(): Promise<Db> {
     const uri = process.env.MONGODB_URI;
     if (!uri) return Promise.reject(new Error("MONGODB_URI is missing."));
     globalForMongo.excelaDb = (async () => {
-      const client = new MongoClient(uri, { serverSelectionTimeoutMS: 10_000 });
+      // Small pool: each serverless instance keeps its own, and Atlas free tiers cap total connections.
+      const client = new MongoClient(uri, { serverSelectionTimeoutMS: 10_000, maxPoolSize: 10 });
       await client.connect();
       // The database name comes from the URI path (/Excela). MongoDB creates it on first write.
       const db = client.db();

@@ -3,6 +3,7 @@ import { getSessionUser, isSameOrigin } from "@/lib/auth";
 import { monthTabPattern } from "@/lib/sheet";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 type Event = { course: string; title: string; date: string };
 type Values = { values?: string[][] };
@@ -109,7 +110,8 @@ export async function POST(request: Request) {
       if (matches.length !== 1) throw new SyncError(`Cannot locate day ${target.day} in column D of ${target.sheet}. Nothing was written.`);
       const rowIndex = matches[0];
       const row = rows[rowIndex];
-      const label = [target.event.course, target.event.title].filter(Boolean).join(" ").replace(/\s+/g, " ");
+      // Everything written to the sheet is uppercase; duplicates are compared case-insensitively below.
+      const label = [target.event.course, target.event.title].filter(Boolean).join(" ").replace(/\s+/g, " ").toUpperCase();
       const slots = [1, 2, 3, 4];
       if (slots.some((slot) => String(row[slot] ?? "").trim().toLowerCase() === label.toLowerCase())) {
         skipped++;

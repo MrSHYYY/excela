@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 const RELEVANT_KEYWORDS = [
   // Academic events
@@ -94,7 +94,7 @@ export default function Home() {
   const [response, setResponse] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [provider, setProvider] = useState("gemini");
+  const [provider, setProvider] = useState("ollama");
   const [events, setEvents] = useState<{ course: string; title: string; date: string }[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
@@ -108,6 +108,8 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -137,6 +139,27 @@ export default function Home() {
     return () => { active = false; };
   }, []);
 
+  // Closes the settings menu on outside click or Escape.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function closeMenu() {
+      setMenuOpen(false);
+      setConfirmingDelete(false);
+    }
+    function onPointerDown(event: MouseEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) closeMenu();
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeMenu();
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuOpen]);
+
   // Keeps the UI in step with what the server says about the session.
   function handleAuthCode(code?: string) {
     if (code === "auth") setSession({ authenticated: false });
@@ -159,6 +182,7 @@ export default function Home() {
     setMessage("");
     setNotice("");
     setConfirmingDelete(false);
+    setMenuOpen(false);
     setError("");
     setEditingSheet(false);
     setSheetInput("");
@@ -238,6 +262,7 @@ export default function Home() {
       setEditingSheet(false);
       setSheetInput("");
       setConfirmingDelete(false);
+      setMenuOpen(false);
       resetResults();
       setNotice("Your account and all data Excela stored about you were deleted.");
     } catch (error) {
@@ -247,16 +272,17 @@ export default function Home() {
     }
   }
 
-  async function handleSync() {
-    if (!events.length || syncing || synced || loading) return;
+  // Writes events to the user's planner. Runs right after extraction (Inject) and for "Retry sync".
+  async function runSync(list: { course: string; title: string; date: string }[]) {
     setSyncing(true);
     setSyncMessage("");
+    setViewLinks([]);
     setError("");
     try {
       const result = await fetch("/api/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ events }),
+        body: JSON.stringify({ events: list }),
       });
       const data = await result.json();
       if (!result.ok) {
@@ -264,13 +290,19 @@ export default function Home() {
         throw new Error(data.error || "Unable to sync with Google Sheets.");
       }
       setSynced(true);
-      setSyncMessage(`Synced: ${data.written} event(s) written, ${data.skipped} already present.`);
+      setSyncMessage(`Injected: ${data.written} event(s) written, ${data.skipped} already present.`);
       setViewLinks(Array.isArray(data.links) ? data.links : []);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Unable to sync with Google Sheets.");
     } finally {
       setSyncing(false);
     }
+  }
+
+  // Retries only the planner step, so the AI isn't called (and charged) again after a failed sync.
+  async function handleSync() {
+    if (!events.length || syncing || synced || loading) return;
+    await runSync(events);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -325,12 +357,16 @@ export default function Home() {
         throw new Error("No response received. Please try again.");
       }
 
-      setEvents(Array.isArray(data.response?.events) ? data.response.events : []);
+      const extracted = Array.isArray(data.response?.events) ? data.response.events : [];
+      setEvents(extracted);
       setResponse(
         typeof data.response === "string"
           ? data.response
           : JSON.stringify(data.response, null, 2)
       );
+      // Inject = extract with AI, then write straight to the planner.
+      if (extracted.length) await runSync(extracted);
+      else setSyncMessage("No events were found in that message, so nothing was injected.");
     } catch (error) {
       setError(
         error instanceof Error
@@ -418,13 +454,115 @@ export default function Home() {
                   <p className="text-zinc-600 dark:text-zinc-400">{session.user.email}</p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-              >
-                Sign out
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                {session.sheet && (
+                  <a
+                    href="/api/sheet/open"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => {
+                      // Pass the browser's local month so it matches the user's time zone.
+                      event.preventDefault();
+                      const now = new Date();
+                      window.open(
+                        `/api/sheet/open?y=${now.getFullYear()}&m=${now.getMonth() + 1}`,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    }}
+                    className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+                  >
+                    View your sheet
+                  </a>
+                )}
+                <div ref={menuRef} className="relative">
+                  <button
+                    type="button"
+                    aria-label="Settings"
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
+                    onClick={() => {
+                      setMenuOpen((open) => !open);
+                      setConfirmingDelete(false);
+                    }}
+                    className="rounded-lg border border-zinc-300 p-2 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="h-5 w-5"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.826a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z"
+                      />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                    </svg>
+                  </button>
+                  {menuOpen && (
+                    <div
+                      role="menu"
+                      aria-label="Account settings"
+                      className="absolute right-0 top-full z-10 mt-2 w-72 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
+                    >
+                      {confirmingDelete ? (
+                        <div className="flex flex-col gap-3 p-2">
+                          <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">
+                            Delete your account?
+                          </p>
+                          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                            This permanently deletes your Excela account and everything Excela stores about you: your
+                            profile, saved planner link, Google access and sign-in sessions. Your Google Sheets are not
+                            changed or deleted. This cannot be undone.
+                          </p>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={handleDeleteAccount}
+                              disabled={deleting}
+                              className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {deleting ? "Deleting…" : "Yes, delete everything"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmingDelete(false)}
+                              disabled={deleting}
+                              className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={handleSignOut}
+                            className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                          >
+                            Sign out
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => setConfirmingDelete(true)}
+                            className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+                          >
+                            Delete account
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {!session.googleAccess && (
@@ -537,12 +675,12 @@ export default function Home() {
                     }}
                     className="w-full rounded-xl border border-zinc-300 bg-white p-3 focus:ring-2 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-900"
                   >
-                    <option value="gemini">
-                      Gemini — Flash
-                    </option>
-
                     <option value="ollama">
                       Ollama — gemma4:31b
+                    </option>
+
+                    <option value="gemini">
+                      Gemini — Flash
                     </option>
                   </select>
 
@@ -563,18 +701,60 @@ export default function Home() {
 
                   <button
                     type="submit"
-                    disabled={loading || syncing}
+                    disabled={loading || syncing || !session.googleAccess}
                     className="self-start rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {loading ? "Sending…" : "Send"}
+                    {loading || syncing ? "Injecting…" : "Inject"}
                   </button>
                 </form>
 
                 <section
                   aria-live="polite"
-                  aria-busy={loading}
+                  aria-busy={loading || syncing}
                   className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
                 >
+                  {(loading || syncing || syncMessage || viewLinks.length > 0 || (events.length > 0 && !synced)) && (
+                    <div className="mb-5 flex flex-col items-start gap-3">
+                      {(loading || syncing) && (
+                        <p role="status" className="text-sm text-zinc-600 dark:text-zinc-400">
+                          {syncing ? "Writing to your planner…" : "Reading your announcement…"}
+                        </p>
+                      )}
+                      {syncMessage && (
+                        <p
+                          role="status"
+                          className={`text-sm ${synced ? "text-emerald-700 dark:text-emerald-400" : "text-zinc-600 dark:text-zinc-400"}`}
+                        >
+                          {syncMessage}
+                        </p>
+                      )}
+                      {viewLinks.length > 0 && (
+                        <div className="flex flex-wrap gap-3">
+                          {viewLinks.map((link) => (
+                            <a
+                              key={link.url}
+                              href={link.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded-lg border border-emerald-700 px-5 py-3 font-medium text-emerald-800 hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 dark:border-emerald-500 dark:text-emerald-300 dark:hover:bg-emerald-950"
+                            >
+                              {viewLinks.length > 1 ? `View changes in ${link.sheet}` : "View changes"}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      {events.length > 0 && !synced && !loading && !syncing && (
+                        <button
+                          type="button"
+                          onClick={handleSync}
+                          disabled={!session.googleAccess}
+                          className="rounded-lg bg-emerald-700 px-5 py-3 font-medium text-white hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Retry sync
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <h2 className="font-semibold">
                     {provider === "ollama"
                       ? "Ollama"
@@ -583,84 +763,16 @@ export default function Home() {
                   </h2>
 
                   <pre className="mt-3 whitespace-pre-wrap break-words font-mono text-sm text-zinc-600 dark:text-zinc-300">
-                    {loading
+                    {loading && !response
                       ? "Processing your announcement…"
                       : response || "Your reply will appear here."}
                   </pre>
-                  {events.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleSync}
-                      disabled={loading || syncing || synced || !session.googleAccess}
-                      className="mt-5 rounded-lg bg-emerald-700 px-5 py-3 font-medium text-white hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {syncing ? "Syncing…" : synced ? "Synced with planner" : "Sync with planner"}
-                    </button>
-                  )}
-                  {syncMessage && <p role="status" className="mt-3 text-sm text-emerald-700 dark:text-emerald-400">{syncMessage}</p>}
-                  {viewLinks.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-3">
-                      {viewLinks.map((link) => (
-                        <a
-                          key={link.url}
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="rounded-lg border border-emerald-700 px-5 py-3 font-medium text-emerald-800 hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 dark:border-emerald-500 dark:text-emerald-300 dark:hover:bg-emerald-950"
-                        >
-                          {viewLinks.length > 1 ? `View changes in ${link.sheet}` : "View changes"}
-                        </a>
-                      ))}
-                    </div>
-                  )}
                 </section>
               </>
             )}
           </>
         )}
       </div>
-      {session?.authenticated && (
-        <div className="mx-auto mt-12 w-full max-w-2xl border-t border-zinc-200 pt-6 dark:border-zinc-800">
-          <h2 className="font-semibold">Delete account</h2>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Permanently deletes your Excela account and everything Excela stores about you: your profile, your
-            saved planner link, Google access and sign-in sessions. Your Google Sheets are not changed or deleted.
-          </p>
-          {confirmingDelete ? (
-            <div className="mt-4 flex flex-col gap-3">
-              <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">
-                This cannot be undone. Delete your account?
-              </p>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={handleDeleteAccount}
-                  disabled={deleting}
-                  className="rounded-lg bg-red-700 px-5 py-2.5 font-medium text-white hover:bg-red-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {deleting ? "Deleting…" : "Yes, delete everything"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmingDelete(false)}
-                  disabled={deleting}
-                  className="rounded-lg border border-zinc-300 px-5 py-2.5 font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmingDelete(true)}
-              className="mt-4 rounded-lg border border-red-700 px-5 py-2.5 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-500 dark:text-red-400 dark:hover:bg-red-950"
-            >
-              Delete account
-            </button>
-          )}
-        </div>
-      )}
     </main>
   );
 }

@@ -2,6 +2,9 @@ import { ApiError, GoogleGenAI } from "@google/genai";
 import { academicExtractionInstruction } from "@/ai/instructions";
 import { getSessionUser } from "@/lib/auth";
 
+// The AI call can take a while (Ollama has a 60s timeout); this lets Vercel run the function that long.
+export const maxDuration = 60;
+
 const fields = ["course", "title", "date"] as const;
 type AcademicEvent = Record<(typeof fields)[number], string>;
 
