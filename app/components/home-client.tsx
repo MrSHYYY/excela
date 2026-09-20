@@ -6,6 +6,8 @@ import Link from "next/link";
 import styles from "./dashboard.module.css";
 import publicStyles from "./public.module.css";
 import Landing from "./landing";
+import PageSkeleton from "./page-skeleton";
+import PendingLink from "./pending-link";
 import { SIGN_IN_CHANNEL, startGoogleSignIn } from "./google-sign-in";
 import type { Session } from "@/lib/session-payload";
 
@@ -126,6 +128,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   const [syncMessage, setSyncMessage] = useState("");
   const [viewLinks, setViewLinks] = useState<ViewLink[]>([]);
   const [session, setSession] = useState<Session | null>(initialSession);
+  const [resolvingSignIn, setResolvingSignIn] = useState(false);
   const [notice, setNotice] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -154,7 +157,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
       // (it renews the session and picks up changes); a failure must not kick anyone out.
       const quiet = initialSession !== null;
       try {
-        const result = await fetch("/api/google/status", { cache: "no-store" });
+        const result = await fetch("/api/google/status", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
         const data = await result.json();
         if (!active) return;
         if (!result.ok) {
@@ -189,13 +192,16 @@ export default function HomeClient({ initialSession }: { initialSession: Session
       }
       setError("");
       setNotice("");
+      setResolvingSignIn(true);
       try {
-        const result = await fetch("/api/google/status", { cache: "no-store" });
+        const result = await fetch("/api/google/status", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
         const data = await result.json();
         if (result.ok) setSession(data);
         else setError(data.error || "Could not load your session.");
       } catch {
         setError("Could not load your session. Check your connection and refresh.");
+      } finally {
+        setResolvingSignIn(false);
       }
     };
     return () => channel.close();
@@ -405,7 +411,9 @@ export default function HomeClient({ initialSession }: { initialSession: Session
     }
   }
 
-  if (!session?.authenticated) {
+  if (resolvingSignIn || session === null) return <PageSkeleton />;
+
+  if (!session.authenticated) {
     return <Landing pending={session === null} error={error} notice={notice} />;
   }
 
@@ -568,7 +576,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
 
       <aside id="dashboard-sidebar" aria-label="Sidebar" aria-hidden={!sidebarOpen} inert={!sidebarOpen} className={styles.sidebar}>
         <nav aria-label="Planner settings" className={styles.sidebarNav}>
-          <Link href="/setup" className={styles.sidebarAction}>Planner &amp; API settings ↗</Link>
+          <PendingLink href="/setup" className={styles.sidebarAction}>Planner &amp; API settings ↗</PendingLink>
         </nav>
       </aside>
       {sidebarOpen && <button type="button" className={styles.backdrop} aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} />}
@@ -597,7 +605,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                 </div>
               </div>
               <form onSubmit={handleSubmit} className={styles.form}>
-                <textarea id="message" aria-label={pipeline === "general" ? "Task" : "Announcement"} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={pipeline === "general" ? "Dry clean the suit on Sept 4" : "CSE340 Quiz 4 is on Sept 27. Don't forget!"} rows={7} required disabled={loading || syncing || !session.sheet} />
+                <textarea id="message" aria-label={pipeline === "general" ? "Task" : "Announcement"} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={pipeline === "general" ? "I have to meet with friend at KFC Sept 25" : "CSE340 Quiz 4 is on Sept 27. Don't forget!"} rows={7} required disabled={loading || syncing || !session.sheet} />
                 <div className={styles.formFooter}>
                   <button type="submit" className={styles.primary} disabled={loading || syncing || !session.googleAccess || !setupComplete}>
                     {loading ? "Injecting…" : syncing ? "Injecting…" : "Inject ↗"}
@@ -648,7 +656,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
               </div>
             </section>
           </div>
-          {!setupComplete && <div className={styles.setupOverlay}><div className={styles.setupPrompt}><h2>A little setup. Then you are ready.</h2><p>Connect your planner and your personal Ollama API key.</p><Link href="/setup" className={styles.primary}>Complete setup ↗</Link></div></div>}
+          {!setupComplete && <div className={styles.setupOverlay}><div className={styles.setupPrompt}><h2>A little setup. Then you are ready.</h2><p>Connect your planner and your personal Ollama API key.</p><PendingLink href="/setup" className={styles.primary}>Complete setup ↗</PendingLink></div></div>}
           </div>
           <footer className={styles.footer}><span>Your sheet. A little less to remember.</span><nav aria-label="Legal"><Link href="/privacy">Privacy policy</Link><Link href="/terms">Terms of service</Link></nav></footer>
         </div>

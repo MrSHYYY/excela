@@ -114,7 +114,8 @@ export async function GET(request: Request) {
       return redirect(new URL(`/api/google/connect?consent=1${flow.popup ? "&popup=1" : ""}`, home));
     }
     const now = new Date();
-    await users.updateOne(
+    // Return the updated user in this write instead of making another database read.
+    const user = await users.findOneAndUpdate(
       { googleId: sub },
       {
         $set: {
@@ -128,9 +129,8 @@ export async function GET(request: Request) {
         },
         $setOnInsert: { createdAt: now },
       },
-      { upsert: true },
+      { upsert: true, returnDocument: "after" },
     );
-    const user = await users.findOne({ googleId: sub });
     if (!user) return finish("database");
     await deleteSession(previousSession);
     const token = await createSession(user._id, request.headers.get("user-agent"));

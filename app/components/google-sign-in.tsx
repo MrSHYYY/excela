@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import styles from "./loading.module.css";
 
 export const SIGN_IN_CHANNEL = "excela-google";
 
@@ -23,15 +24,26 @@ export function startGoogleSignIn(consent = false) {
     return;
   }
   popup.focus();
+  return popup;
 }
 
 // A "Sign in with Google" link for any page. Without JavaScript or with a middle-click it is a normal link.
 export function GoogleSignInLink({ className, children }: { className?: string; children: ReactNode }) {
+  const [pending, setPending] = useState(false);
+  const popupRef = useRef<Window | undefined>(undefined);
+  useEffect(() => {
+    if (!pending) return;
+    const timer = window.setInterval(() => {
+      if (popupRef.current?.closed) setPending(false);
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, [pending]);
   // The home page handles the result itself. Anywhere else (e.g. the legal pages) go home once signed in.
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
     const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
     channel.onmessage = (event: MessageEvent<{ status?: string }>) => {
+      setPending(false);
       if (event.data?.status === "connected" && window.location.pathname !== "/") window.location.assign("/");
     };
     return () => channel.close();
@@ -41,12 +53,16 @@ export function GoogleSignInLink({ className, children }: { className?: string; 
     <a
       href="/api/google/connect"
       onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         event.preventDefault();
-        startGoogleSignIn();
+        if (pending) { popupRef.current?.focus(); return; }
+        setPending(true);
+        popupRef.current = startGoogleSignIn();
       }}
       className={className}
+      aria-busy={pending}
     >
-      {children}
+      {pending ? <span className={styles.pendingLabel}><span className={styles.spinner} aria-hidden="true" />Signing in…</span> : children}
     </a>
   );
 }
