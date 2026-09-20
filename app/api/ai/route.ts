@@ -1,5 +1,7 @@
 import { isPipelineId, pipelines } from "@/ai/pipelines";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, isSameOrigin } from "@/lib/auth";
+import { decrypt } from "@/lib/crypto";
+import { normalizeOllamaKey } from "@/lib/ollama-key";
 
 // The AI call can take a while (Ollama has a 60s timeout); this lets Vercel run the function that long.
 export const maxDuration = 60;
@@ -13,10 +15,21 @@ function isPlannerEvent(value: unknown): value is PlannerEvent {
 }
 
 export async function POST(request: Request) {
-  // Only signed-in users can spend AI credits.
+  if (!isSameOrigin(request)) {
+    return Response.json({ error: "Submit requests from Excela." }, { status: 403 });
+  }
+  let apiKey: string | null;
+  // Only the signed-in user's encrypted key can authorize a model request.
   try {
-    if (!(await getSessionUser())) {
+    const current = await getSessionUser();
+    if (!current) {
       return Response.json({ error: "Sign in with Google to use Excela.", code: "auth" }, { status: 401 });
+    }
+    apiKey = current.user.ollamaApiKey ? decrypt(current.user.ollamaApiKey) : null;
+    // Also support keys saved before paste normalization was introduced.
+    apiKey = apiKey ? normalizeOllamaKey(apiKey) : null;
+    if (!apiKey || !current.user.sheetId) {
+      return Response.json({ error: "Complete setup with a planner and your Ollama API key first.", code: "setup_required" }, { status: 409 });
     }
   } catch {
     return Response.json({ error: "Could not reach the database. Please try again." }, { status: 503 });
@@ -47,13 +60,6 @@ export async function POST(request: Request) {
   const pipeline = "pipeline" in body ? body.pipeline : "academic";
   if (!isPipelineId(pipeline)) {
     return Response.json({ error: "Choose the academic or general pipeline." }, { status: 400 });
-  }
-  const apiKey = process.env.OLLAMA_API;
-  if (!apiKey) {
-    return Response.json(
-      { error: "OLLAMA_API is not configured." },
-      { status: 500 },
-    );
   }
 
   try {
@@ -97,7 +103,7 @@ export async function POST(request: Request) {
     });
     if (!result.ok) {
       const errors: Record<number, string> = {
-        401: "Ollama authentication failed. Check OLLAMA_API on the server.",
+        401: "Ollama returned an authentication error (401) for your saved key. In Setup, save the full secret from ollama.com/settings/keys, not its name or masked preview. If the full key still fails, it needs an authentication check with Ollama.",
         402: "Ollama requires paid usage for this request (402). Unused free usage does not guarantee access to this model. Check model access in your Ollama account.",
         403: "Ollama denied access. Check your API key and model access.",
         404: "Ollama could not find gemma4:31b.",

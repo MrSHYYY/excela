@@ -8,7 +8,7 @@ import publicStyles from "./public.module.css";
 import Landing from "./landing";
 import { SIGN_IN_CHANNEL, startGoogleSignIn } from "./google-sign-in";
 import type { Session } from "@/lib/session-payload";
-import { choosePlanner } from "@/lib/google-picker";
+
 
 const RELEVANT_KEYWORDS = [
   // Academic events
@@ -126,11 +126,6 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   const [syncMessage, setSyncMessage] = useState("");
   const [viewLinks, setViewLinks] = useState<ViewLink[]>([]);
   const [session, setSession] = useState<Session | null>(initialSession);
-  const [savingSheet, setSavingSheet] = useState(false);
-  const [editingSheet, setEditingSheet] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const [confirmingReset, setConfirmingReset] = useState(false);
   const [notice, setNotice] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -232,6 +227,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
     if (code === "auth") setSession({ authenticated: false });
     if (code === "reauth") setSession((current) => (current?.authenticated ? { ...current, googleAccess: false } : current));
     if (code === "no_sheet") setSession((current) => (current?.authenticated ? { ...current, sheet: null } : current));
+    if (code === "setup_required") setSession((current) => (current?.authenticated ? { ...current, hasApiKey: false } : current));
   }
 
   // One line per step of an injection, shown in the Output panel's LOG view.
@@ -266,99 +262,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
     setMenuOpen(false);
     setSidebarOpen(false);
     setError("");
-    setEditingSheet(false);
-    setConfirmingReset(false);
     resetResults();
-  }
-
-  async function handleChooseSheet() {
-    if (savingSheet || generating) return;
-    setSavingSheet(true);
-    setNotice("");
-    setError("");
-    try {
-      const pickerResult = await fetch("/api/google/picker", { method: "POST", cache: "no-store" });
-      const config = await pickerResult.json();
-      if (!pickerResult.ok) {
-        handleAuthCode(config.code);
-        throw new Error(config.error || "Unable to open Google Drive.");
-      }
-      const url = await choosePlanner(config);
-      if (!url) return;
-      const result = await fetch("/api/sheet", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const data = await result.json();
-      if (!result.ok) {
-        handleAuthCode(data.code);
-        throw new Error(data.error || "Unable to save your link.");
-      }
-      setViewLinks([]);
-      setSession((current) => (current?.authenticated ? { ...current, sheet: data.sheet } : current));
-      setEditingSheet(false);
-      setSynced(false);
-      setSyncMessage("");
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Unable to save your link.");
-    } finally {
-      setSavingSheet(false);
-    }
-  }
-
-  async function handleGenerateTemplate() {
-    if (generating || savingSheet) return;
-    setGenerating(true);
-    setError("");
-    setNotice("");
-    try {
-      const result = await fetch("/api/sheet/template", { method: "POST" });
-      const data = await result.json();
-      if (!result.ok) {
-        handleAuthCode(data.code);
-        throw new Error(data.error || "Unable to generate your template.");
-      }
-      setViewLinks([]);
-      setSession((current) => (current?.authenticated ? { ...current, sheet: data.sheet, hasGeneratedPlanner: true } : current));
-      setEditingSheet(false);
-      setSynced(false);
-      setSyncMessage("");
-      setNotice("Your Excela planner was created in your Google Drive and saved to your account. It will be used for future syncs.");
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Unable to generate your template.");
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  // Replaces the Excela-created planner with a fresh copy of the template (the server enforces the rules).
-  async function handleResetTemplate() {
-    if (resetting || savingSheet || generating) return;
-    setResetting(true);
-    setError("");
-    setNotice("");
-    try {
-      const result = await fetch("/api/sheet/reset", { method: "POST" });
-      const data = await result.json();
-      if (!result.ok) {
-        handleAuthCode(data.code);
-        throw new Error(data.error || "Unable to reset your planner.");
-      }
-      resetResults();
-      setSession((current) => (current?.authenticated ? { ...current, sheet: data.sheet, hasGeneratedPlanner: true } : current));
-      setEditingSheet(false);
-      setNotice(
-        data.oldTrashed === false
-          ? "Your planner was reset to a fresh template. The previous \u201cExcela\u201d file couldn\u2019t be moved to the trash automatically, so you can delete it in Google Drive."
-          : "Your planner was reset to a fresh template.",
-      );
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Unable to reset your planner.");
-    } finally {
-      setResetting(false);
-      setConfirmingReset(false);
-    }
   }
 
   async function handleDeleteAccount() {
@@ -374,7 +278,6 @@ export default function HomeClient({ initialSession }: { initialSession: Session
       }
       setSession({ authenticated: false });
       setMessage("");
-      setEditingSheet(false);
       setConfirmingDelete(false);
       setMenuOpen(false);
       resetResults();
@@ -427,7 +330,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
 
     const trimmedMessage = message.trim();
 
-    if (!trimmedMessage || loading || syncing) return;
+    if (!trimmedMessage || loading || syncing || !session?.authenticated || !session.sheet || !session.hasApiKey) return;
 
     setError("");
     resetResults();
@@ -505,6 +408,8 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   if (!session?.authenticated) {
     return <Landing pending={session === null} error={error} notice={notice} />;
   }
+
+  const setupComplete = Boolean(session.sheet && session.hasApiKey);
 
   return (
     <div className={styles.dashboard} data-sidebar-open={sidebarOpen}>
@@ -663,10 +568,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
 
       <aside id="dashboard-sidebar" aria-label="Sidebar" aria-hidden={!sidebarOpen} inert={!sidebarOpen} className={styles.sidebar}>
         <nav aria-label="Planner settings" className={styles.sidebarNav}>
-          <button type="button" className={styles.sidebarAction} disabled={loading || syncing || savingSheet || generating} onClick={() => { setEditingSheet(true); setSidebarOpen(false); setError(""); }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M4 7h15m-4-4 4 4-4 4M20 17H5m4-4-4 4 4 4" /></svg>
-            {session.sheet ? "Change planner" : "Connect planner"}
-          </button>
+          <Link href="/setup" className={styles.sidebarAction}>Planner &amp; API settings ↗</Link>
         </nav>
       </aside>
       {sidebarOpen && <button type="button" className={styles.backdrop} aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} />}
@@ -684,48 +586,8 @@ export default function HomeClient({ initialSession }: { initialSession: Session
             </p>
           )}
 
-          {(!session.sheet || editingSheet) && (
-            <section className={styles.connectPanel} aria-labelledby="planner-heading">
-              <div>
-                <p className={styles.eyebrow}>YOUR GOOGLE SHEET</p>
-                <h2 id="planner-heading">{session.sheet ? (session.sheet.generated ? "Change or reset your planner." : "Choose a different planner.") : "A place for everything."}</h2>
-                <p className={styles.description}>
-                  {!session.hasGeneratedPlanner
-                    ? "Choose your monthly planner from Google Drive, or start fresh with our template."
-                    : session.sheet?.generated
-                      ? "Choose a different planner from Google Drive, or reset your Excela planner to a fresh template."
-                      : "Choose a planner from Google Drive. Your Excela planner is the file named \u201cExcela\u201d; choose it to use it again and to reset it."}
-                </p>
-                <p className={styles.hint}>Existing planners need month tabs like “Sept 2026”.</p>
-              </div>
-              <div className={styles.connectActions}>
-                <button type="button" className={styles.primary} onClick={handleChooseSheet} disabled={savingSheet || generating || resetting || !session.googleAccess}>
-                  {savingSheet ? "Choosing planner…" : "Choose from Google Drive ↗"}
-                </button>
-                {!session.hasGeneratedPlanner && (
-                  <button type="button" className={styles.secondary} onClick={handleGenerateTemplate} disabled={generating || savingSheet || resetting || !session.googleAccess}>
-                    {generating ? "Generating your planner…" : "Generate template +"}
-                  </button>
-                )}
-                {session.sheet?.generated && (confirmingReset ? (
-                  <>
-                    <p className={styles.hint}>This replaces your Excela planner with a fresh template. Everything currently in it will be lost, and the old file moves to your Drive trash.</p>
-                    <button type="button" className={styles.primary} onClick={handleResetTemplate} disabled={resetting || !session.googleAccess}>
-                      {resetting ? "Resetting your planner…" : "Yes, reset planner"}
-                    </button>
-                    <button type="button" className={styles.textButton} disabled={resetting} onClick={() => setConfirmingReset(false)}>Keep my planner</button>
-                  </>
-                ) : (
-                  <button type="button" className={styles.secondary} onClick={() => setConfirmingReset(true)} disabled={savingSheet || generating || !session.googleAccess}>
-                    Reset template ↺
-                  </button>
-                ))}
-                {session.sheet && <button type="button" className={styles.textButton} disabled={savingSheet || generating || resetting} onClick={() => { setEditingSheet(false); setConfirmingReset(false); setError(""); }}>Cancel</button>}
-              </div>
-            </section>
-          )}
-
-          {session.sheet && !editingSheet && <div className={styles.workspace}>
+          <div className={styles.workspaceGate}>
+          <div className={styles.workspace} data-locked={!setupComplete} inert={!setupComplete} aria-hidden={!setupComplete}>
             <section className={styles.panel} aria-labelledby="input-heading">
               <div className={styles.tabBar}>
                 <h2 id="input-heading">Input</h2>
@@ -737,7 +599,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
               <form onSubmit={handleSubmit} className={styles.form}>
                 <textarea id="message" aria-label={pipeline === "general" ? "Task" : "Announcement"} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={pipeline === "general" ? "Dry clean the suit on Sept 4" : "CSE340 Quiz 4 is on Sept 27. Don't forget!"} rows={7} required disabled={loading || syncing || !session.sheet} />
                 <div className={styles.formFooter}>
-                  <button type="submit" className={styles.primary} disabled={loading || syncing || savingSheet || generating || !session.googleAccess || !session.sheet}>
+                  <button type="submit" className={styles.primary} disabled={loading || syncing || !session.googleAccess || !setupComplete}>
                     {loading ? "Injecting…" : syncing ? "Injecting…" : "Inject ↗"}
                   </button>
                 </div>
@@ -785,7 +647,9 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                 {events.length > 0 && !synced && !loading && !syncing && <button type="button" className={styles.primary} onClick={handleSync} disabled={!session.googleAccess}>Retry sync ↗</button>}
               </div>
             </section>
-          </div>}
+          </div>
+          {!setupComplete && <div className={styles.setupOverlay}><div className={styles.setupPrompt}><h2>A little setup. Then you are ready.</h2><p>Connect your planner and your personal Ollama API key.</p><Link href="/setup" className={styles.primary}>Complete setup ↗</Link></div></div>}
+          </div>
           <footer className={styles.footer}><span>Your sheet. A little less to remember.</span><nav aria-label="Legal"><Link href="/privacy">Privacy policy</Link><Link href="/terms">Terms of service</Link></nav></footer>
         </div>
       </main>

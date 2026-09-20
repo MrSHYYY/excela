@@ -1,0 +1,35 @@
+.shell { height: 100dvh; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 0 5vw 16px; background: #090909; color: #f2f2f0; color-scheme: dark; font-family: var(--font-geist-sans), Arial, sans-serif; }
+.shell :is(a,button,input):focus-visible { outline: 2px solid #c9d8ba; outline-offset: 4px; }
+.shell button { cursor: pointer; }.shell button:disabled { cursor: not-allowed; opacity: .45; }
+.header { width: 100%; max-width: 1160px; margin: 0 auto; min-height: 76px; flex-shrink: 0; border-bottom: 1px solid #292929; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.main { width: 100%; max-width: 1000px; margin: 20px auto 0; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.main h1 { font-size: clamp(30px, 4vw, 44px); font-weight: 500; letter-spacing: -1.6px; margin-top: 12px; }
+.intro { color: #aaa; font-size: 16px; line-height: 1.7; margin: 14px 0 28px; }
+.progress { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
+.progress span { border: 1px solid #343434; border-radius: 20px; padding: 8px 14px; font-size: 13px; color: #aaa; }
+.progress span[data-done="true"] { color: #c9dfbd; border-color: #3b4b32; background: #182015; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.card { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; min-width: 0; border: 1px solid #303030; border-radius: 12px; background: #141414; padding: 28px; }
+.card h2 { font-size: 25px; font-weight: 500; letter-spacing: -.7px; }
+.card p { margin-top: 0; }.card a { text-underline-offset: 4px; }
+.actions { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+.connected { padding: 12px 14px; border: 1px solid #35442e; border-radius: 7px; color: #c1d4b2; background: #181e14; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; width: 100%; }
+.connected a { text-decoration: underline; }
+.keyForm { display: flex; flex-direction: column; gap: 12px; width: 100%; }.keyForm label { font-size: 14px; color: #ccc; }
+.keyForm input { width: 100%; min-width: 0; border: 1px solid #41413d; border-radius: 7px; padding: 13px; background: #0c0c0c; color: #eee; font-size: 16px; }
+.keyForm input::placeholder { color: #85857e; font-size: 13px; }
+.reset { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; margin-top: auto; padding-top: 16px; border-top: 1px solid #303030; width: 100%; }
+.finish { display: flex; align-items: center; justify-content: space-between; gap: 22px; padding-top: 26px; margin-top: 24px; border-top: 1px solid #303030; }.finish p { color: #aaa; font-size: 14px; line-height: 1.7; }
+@media (max-width: 720px) { .shell { padding: 0 20px 30px; }.main { margin-top: 30px; }.grid { grid-template-columns: 1fr; }.card { padding: 22px; }.finish { flex-direction: column; align-items: stretch; }.finish button { width: 100%; } }
+@media (min-width: 721px) and (min-height: 650px) {
+  .main { display: flex; flex-direction: column; overflow: hidden; }
+  .main > :not(.grid) { flex-shrink: 0; }
+  .main h1 { font-size: clamp(30px, 3vw, 38px); margin-top: 6px; }
+  .intro { margin: 8px 0 14px; }
+  .progress { margin-bottom: 14px; }
+  .grid { flex: 1; min-height: 0; }
+  .card { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 20px; gap: 12px; }
+  .card > * { flex-shrink: 0; }
+  .keyForm { gap: 9px; }
+  .finish { padding-top: 14px; margin-top: 14px; }
+}
