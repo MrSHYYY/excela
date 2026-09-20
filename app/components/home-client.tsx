@@ -80,6 +80,17 @@ function passesInputFilter(message: string): boolean {
   });
 }
 
+type ViewLink = { sheet: string; url: string; base: string; gid: number; row: number };
+
+// Google Sheets scrolls so the selected cell sits at the top of the window. Selecting a cell above the
+// edited row leaves the edited row around the middle of the screen. Column A keeps the default
+// horizontal scroll. Sheets' own toolbars take roughly 220px and each row is about 21px tall.
+function centeredSheetUrl(link: ViewLink) {
+  const visibleRows = Math.max(10, Math.floor((window.innerHeight - 220) / 21));
+  const top = Math.max(1, link.row - Math.floor(visibleRows / 2));
+  return `${link.base}#gid=${link.gid}&range=A${top}`;
+}
+
 const signInMessages: Record<string, string> = {
   denied: "Google permission was not granted. Continue with Google again and allow access to files you create or select with Excela.",
   invalid_state: "Sign-in expired or was opened in a different browser. Please try again.",
@@ -100,7 +111,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
-  const [viewLinks, setViewLinks] = useState<{ sheet: string; url: string }[]>([]);
+  const [viewLinks, setViewLinks] = useState<ViewLink[]>([]);
   const [session, setSession] = useState<Session | null>(initialSession);
   const [savingSheet, setSavingSheet] = useState(false);
   const [editingSheet, setEditingSheet] = useState(false);
@@ -673,7 +684,10 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                 </div>
               )}
               <div className={styles.resultActions}>
-                {viewLinks.map((link) => <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer" className={styles.secondary}>{viewLinks.length > 1 ? 'View changes in ' + link.sheet : "View changes"} ↗</a>)}
+                {viewLinks.map((link) => <a key={link.url}
+                              onClick={(event) => {
+                                event.currentTarget.href = centeredSheetUrl(link);
+                              }} href={link.url} target="_blank" rel="noopener noreferrer" className={styles.secondary}>{viewLinks.length > 1 ? 'View changes in ' + link.sheet : "View changes"} ↗</a>)}
                 {events.length > 0 && !synced && !loading && !syncing && <button type="button" className={styles.primary} onClick={handleSync} disabled={!session.googleAccess}>Retry sync ↗</button>}
               </div>
             </section>
