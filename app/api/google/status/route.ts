@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE, SESSION_SECONDS, cookieOptions, getSessionUser, renewSession } from "@/lib/auth";
-import { decrypt } from "@/lib/crypto";
+import { sessionPayload } from "@/lib/session-payload";
 
 export const runtime = "nodejs";
 
@@ -10,15 +10,7 @@ export async function GET() {
     const current = await getSessionUser();
     if (!current) return Response.json({ authenticated: false }, { headers: { "Cache-Control": "no-store" } });
     const { user, session } = current;
-    const response = NextResponse.json(
-      {
-        authenticated: true,
-        user: { name: user.name, email: user.email, picture: user.picture },
-        sheet: user.sheetId && user.sheetUrl ? { url: user.sheetUrl, title: user.sheetTitle ?? "Planner" } : null,
-        googleAccess: Boolean(user.refreshToken && decrypt(user.refreshToken)),
-      },
-      { headers: { "Cache-Control": "no-store" } },
-    );
+    const response = NextResponse.json(sessionPayload(user), { headers: { "Cache-Control": "no-store" } });
     const renewedToken = await renewSession(session);
     if (renewedToken) response.cookies.set(SESSION_COOKIE, renewedToken, cookieOptions(SESSION_SECONDS));
     return response;

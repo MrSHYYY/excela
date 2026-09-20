@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import type { ObjectId } from "mongodb";
 import type { SessionDoc, UserDoc } from "@/lib/models";
-import { sessionsCollection, usersCollection } from "@/lib/mongodb";
+import { sessionsCollection } from "@/lib/mongodb";
 
 export const SESSION_COOKIE = "excela_session";
 export const OAUTH_COOKIE = "excela_oauth";
@@ -50,10 +50,17 @@ export async function deleteSession(token: string | undefined) {
 export async function getSessionUser(): Promise<{ user: UserDoc; session: SessionDoc } | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  const session = await (await sessionsCollection()).findOne({ _id: hashToken(token) });
-  if (!session || session.expiresAt.getTime() <= Date.now()) return null;
-  const user = await (await usersCollection()).findOne({ _id: session.userId });
-  return user ? { user, session } : null;
+  // One round trip: find the session and join its user, instead of two sequential queries.
+  const [found] = await (await sessionsCollection())
+    .aggregate<SessionDoc & { user: UserDoc }>([
+      { $match: { _id: hashToken(token), expiresAt: { $gt: new Date() } } },
+      { $lookup: { from: "users", localField: "userId", foreignField: "_id", as: "user" } },
+      { $unwind: "$user" },
+    ])
+    .toArray();
+  if (!found) return null;
+  const { user, ...session } = found;
+  return { user, session };
 }
 
 /** Sliding expiry: pushes the session out to a full lifetime if more than a day has passed. */

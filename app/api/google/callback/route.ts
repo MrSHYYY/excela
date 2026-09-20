@@ -11,7 +11,7 @@ import {
   deleteSession,
 } from "@/lib/auth";
 import { encrypt } from "@/lib/crypto";
-import { usersCollection } from "@/lib/mongodb";
+import { ensureIndexes, usersCollection } from "@/lib/mongodb";
 
 export const runtime = "nodejs";
 
@@ -103,6 +103,7 @@ export async function GET(request: Request) {
 
   // 2. Create or update the user, then start a session.
   try {
+    await ensureIndexes();
     const users = await usersCollection();
     const existing = await users.findOne({ googleId: sub });
     const refreshToken = tokens.refresh_token ? encrypt(tokens.refresh_token) : existing?.refreshToken;
