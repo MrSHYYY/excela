@@ -1,4 +1,4 @@
-import { isPipelineId, pipelines } from "@/ai/pipelines";
+import { buildInstruction, isPipelineId, parseToday } from "@/ai/pipelines";
 import { getSessionUser, isSameOrigin } from "@/lib/auth";
 import { decrypt } from "@/lib/crypto";
 import { normalizeOllamaKey } from "@/lib/ollama-key";
@@ -62,6 +62,14 @@ export async function POST(request: Request) {
     return Response.json({ error: "Choose the academic or general pipeline." }, { status: 400 });
   }
 
+  // The browser's local date lets the model resolve "today", "tomorrow", and so on. If it is missing, invalid,
+  // or more than two days away from the server's clock (a wrong device clock), use the server's date instead.
+  const serverToday = new Date().toISOString().slice(0, 10);
+  const clientToday = parseToday("today" in body ? body.today : undefined);
+  const today = clientToday && Math.abs(Date.parse(clientToday) - Date.parse(serverToday)) <= 2 * 86_400_000
+    ? clientToday
+    : serverToday;
+
   try {
     const schema = {
       type: "object",
@@ -94,7 +102,7 @@ export async function POST(request: Request) {
         messages: [
           {
             role: "system",
-            content: `${pipelines[pipeline].instruction}\nReturn only a JSON object, without Markdown or commentary, matching this schema: ${JSON.stringify(schema)}`,
+            content: `${buildInstruction(pipeline, today)}\nReturn only a JSON object, without Markdown or commentary, matching this schema: ${JSON.stringify(schema)}`,
           },
           { role: "user", content: body.message },
         ],

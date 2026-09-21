@@ -10,88 +10,11 @@ import PageSkeleton from "./page-skeleton";
 import PendingLink from "./pending-link";
 import { SIGN_IN_CHANNEL, startGoogleSignIn } from "./google-sign-in";
 import type { Session } from "@/lib/session-payload";
+import { passesAcademicFilter, passesGeneralFilter } from "@/lib/input-filter";
 
 
-const RELEVANT_KEYWORDS = [
-  // Academic events
-  "quiz",
-  "quizzes",
-  "test",
-  "tests",
-  "exam",
-  "exams",
-  "midterm",
-  "midterms",
-  "final",
-  "finals",
-  "assessment",
-  "assessments",
-
-  // Coursework
-  "assignment",
-  "assignments",
-  "homework",
-  "project",
-  "projects",
-  "lab",
-  "labs",
-  "laboratory",
-  "practical",
-  "practicals",
-  "presentation",
-  "presentations",
-  "viva",
-
-  // Academic schedule
-  "class",
-  "classes",
-  "lecture",
-  "lectures",
-  "tutorial",
-  "tutorials",
-  "deadline",
-  "deadlines",
-  "submission",
-  "submissions",
-  "due",
-
-  // Schedule changes
-  "rescheduled",
-  "reschedule",
-  "postponed",
-  "postpone",
-  "cancelled",
-  "canceled",
-  "cancel",
-  "moved",
-  "extended",
-  "extension",
-];
-
-function passesInputFilter(message: string): boolean {
-  const normalized = message.toLowerCase();
-
-  return RELEVANT_KEYWORDS.some((keyword) => {
-    const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-    // Match whole words so things like "contest" don't accidentally
-    // match "test".
-    const regex = new RegExp(`\\b${escapedKeyword}(?=\\b|\\d)`, "i");
-
-    return regex.test(normalized);
-  });
-}
-
+// The input pre-filters (forgiving of typos) live in lib/input-filter.ts.
 type Pipeline = "academic" | "general";
-
-// General pipeline pre-filter: a task needs a date to be useful, so require a month name or a numeric
-// date before spending any AI tokens. (The Academic pipeline uses the keyword filter above.)
-function passesGeneralFilter(message: string): boolean {
-  return (
-    /\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sept?(ember)?|oct(ober)?|nov(ember)?|dec(ember)?)\b/i.test(message) ||
-    /\b\d{1,4}[/-]\d{1,2}\b/.test(message)
-  );
-}
 
 type ViewLink = { sheet: string; url: string; base: string; gid: number; row: number };
 
@@ -102,6 +25,14 @@ function centeredSheetUrl(link: ViewLink) {
   const visibleRows = Math.max(10, Math.floor((window.innerHeight - 220) / 21));
   const top = Math.max(1, link.row - Math.floor(visibleRows / 2));
   return `${link.base}#gid=${link.gid}&range=A${top}`;
+}
+
+// The user's local calendar date (YYYY-MM-DD). Sent with each request so the AI can resolve
+// "today", "tomorrow", "yesterday" and similar words against the right day.
+function localToday() {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
 const signInMessages: Record<string, string> = {
@@ -336,7 +267,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
 
     const trimmedMessage = message.trim();
 
-    if (!trimmedMessage || loading || syncing || !session?.authenticated || !session.sheet || !session.hasApiKey) return;
+    if (!trimmedMessage || loading || syncing || !session?.authenticated || !session.sheet || !session.hasApiKey || !session.googleAccess) return;
 
     setError("");
     resetResults();
@@ -347,7 +278,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
     // This happens BEFORE any request is sent to Gemini
     // or Ollama, so irrelevant messages cost zero AI tokens.
     // --------------------------------------------------
-    const passes = pipeline === "general" ? passesGeneralFilter(trimmedMessage) : passesInputFilter(trimmedMessage);
+    const passes = pipeline === "general" ? passesGeneralFilter(trimmedMessage) : passesAcademicFilter(trimmedMessage);
     if (!passes) {
       addLog(pipeline === "general" ? "Rejected: no date found in the message." : "Rejected: no academic keywords found in the message.", "error");
       setResponse(
@@ -370,6 +301,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
         body: JSON.stringify({
           message: trimmedMessage,
           pipeline,
+          today: localToday(),
         }),
       });
 
@@ -605,13 +537,20 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                 </div>
               </div>
               <form onSubmit={handleSubmit} className={styles.form}>
-                <textarea id="message" aria-label={pipeline === "general" ? "Task" : "Announcement"} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={pipeline === "general" ? "I have to meet with friend at KFC Sept 25" : "CSE340 Quiz 4 is on Sept 27. Don't forget!"} rows={7} required disabled={loading || syncing || !session.sheet} />
+                <textarea id="message" aria-label={pipeline === "general" ? "Task" : "Announcement"} value={message} onChange={(event) => setMessage(event.target.value)}
+                  onKeyDown={(event) => {
+                    // Enter injects; Shift+Enter adds a new line. Ignored while an input method (IME) is composing text.
+                    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                      event.preventDefault();
+                      event.currentTarget.form?.requestSubmit();
+                    }
+                  }} placeholder={pipeline === "general" ? "I have to meet with friend at KFC Sept 25" : "CSE340 Quiz 4 is on Sept 27. Don't forget!"} rows={7} required disabled={loading || syncing || !session.sheet} />
                 <div className={styles.formFooter}>
                   <button type="submit" className={styles.primary} disabled={loading || syncing || !session.googleAccess || !setupComplete}>
                     {loading ? "Injecting…" : syncing ? "Injecting…" : "Inject ↗"}
                   </button>
                 </div>
-                <p className={styles.hint}>{session.sheet ? "Events go straight to the matching dates in your planner." : "Connect or generate a planner to get started."}</p>
+                <p className={styles.hint}>{session.sheet ? "Events go straight to the matching dates in your planner. Press Enter to inject, Shift+Enter for a new line." : "Connect or generate a planner to get started."}</p>
               </form>
             </section>
 
