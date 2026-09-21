@@ -550,7 +550,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                     {loading ? "Injecting…" : syncing ? "Injecting…" : "Inject ↗"}
                   </button>
                 </div>
-                <p className={styles.hint}>{session.sheet ? "Events go straight to the matching dates in your planner. Press Enter to inject, Shift+Enter for a new line." : "Connect or generate a planner to get started."}</p>
+                <p className={styles.hint}>{session.sheet ? "Press Enter to inject · Shift+Enter for a new line." : "Connect or generate a planner to get started."}</p>
               </form>
             </section>
 
@@ -562,8 +562,6 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                   <button type="button" aria-pressed={outputTab === "log"} data-active={outputTab === "log"} onClick={() => setOutputTab("log")}>LOG</button>
                 </div>
               </div>
-              {(loading || syncing) && <p role="status" className={styles.processing}>{syncing ? "Writing to your planner…" : "Reading your announcement…"}</p>}
-              {syncMessage && <p role="status" className={styles.notice}>{syncMessage}</p>}
               {outputTab === "log" ? (
                 logs.length ? (
                   <ol className={styles.log} aria-label="Injection log">
@@ -586,13 +584,15 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                   <span>Paste an announcement to turn it into a planner entry.</span>
                 </div>
               )}
-              <div className={styles.resultActions}>
+              <div className={styles.outputFooter}>
                 {viewLinks.map((link) => <a key={link.url}
                               onClick={(event) => {
                                 event.currentTarget.href = centeredSheetUrl(link);
                               }} href={link.url} target="_blank" rel="noopener noreferrer" className={styles.secondary}>{viewLinks.length > 1 ? 'View changes in ' + link.sheet : "View changes"} ↗</a>)}
                 {events.length > 0 && !synced && !loading && !syncing && <button type="button" className={styles.primary} onClick={handleSync} disabled={!session.googleAccess}>Retry sync ↗</button>}
+                {syncMessage && <p role="status" className={styles.outputStatus} data-tone={synced ? undefined : "info"}>{syncMessage}</p>}
               </div>
+              <p role="status" className={`${styles.hint} ${styles.outputHint}`}>{syncing ? "Writing to your planner…" : loading ? "Reading your message…" : "Use LOG to follow each step of an injection."}</p>
             </section>
           </div>
           {!setupComplete && <div className={styles.setupOverlay}><div className={styles.setupPrompt}><h2>A little setup. Then you are ready.</h2><p>Connect your planner and your personal Ollama API key.</p><PendingLink href="/setup" className={styles.primary}>Complete setup ↗</PendingLink></div></div>}

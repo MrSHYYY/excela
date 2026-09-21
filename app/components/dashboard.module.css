@@ -190,3 +190,22 @@
 @media (min-width: 761px) and (min-height: 650px) {
   .log { flex: 1; min-height: 80px; max-height: none; }
 }
+
+/* Output mirrors Input: same column width, box size, position and footer row, so the two panels line up.
+   The status message sits in the footer row beside View changes / Retry sync. */
+.response, .log, .emptyState { margin-top: 25px; min-height: 194px; max-height: none; border-width: 1px; border-radius: 8px; }
+.response, .log { border-color: #343434; }
+.formFooter, .outputFooter { min-height: 46px; }
+.outputFooter { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+.outputStatus { min-width: 0; padding: 10px 14px; border: 1px solid #343e29; border-radius: 8px; background: #171c13; color: #c2ceb0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.outputStatus[data-tone="info"] { border-color: #353535; background: #141414; color: #bcbcb4; }
+.form .hint, .outputHint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 1101px) { .workspace { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 1600px) { .response, .log, .emptyState { min-height: 230px; } }
+@media (max-width: 760px), (max-height: 649px) { .response, .log, .emptyState { min-height: 130px; } }
+@media (min-width: 761px) and (min-height: 650px) {
+  .workspace { grid-template-columns: 1fr 1fr; }
+  .response, .log, .emptyState { flex: 1; min-height: 80px; margin-top: 16px; }
+  .outputFooter { flex-shrink: 0; margin-top: 14px; }
+  .outputHint { flex-shrink: 0; margin-top: 8px; }
+}
