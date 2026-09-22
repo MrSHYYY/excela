@@ -2,6 +2,7 @@ import { buildInstruction, isPipelineId, parseToday } from "@/ai/pipelines";
 import { getSessionUser, isSameOrigin } from "@/lib/auth";
 import { decrypt } from "@/lib/crypto";
 import { normalizeOllamaKey } from "@/lib/ollama-key";
+import { IMAGE_TYPES, MAX_IMAGE_BYTES, type ImageInput } from "@/lib/image-input";
 
 // The AI call can take a while (Ollama has a 60s timeout); this lets Vercel run the function that long.
 export const maxDuration = 60;
@@ -48,12 +49,36 @@ export async function POST(request: Request) {
     body === null ||
     !("message" in body) ||
     typeof body.message !== "string" ||
-    !body.message.trim()
+    body.message.length > 20_000
   ) {
     return Response.json(
-      { error: "message must be a non-empty string." },
+      { error: "Provide message text of at most 20,000 characters." },
       { status: 400 },
     );
+  }
+
+  let image: ImageInput | undefined;
+  if ("image" in body && body.image != null) {
+    const candidate = body.image;
+    if (typeof candidate !== "object" || !("mimeType" in candidate) || !("data" in candidate) ||
+        typeof candidate.mimeType !== "string" || !IMAGE_TYPES.includes(candidate.mimeType) ||
+        typeof candidate.data !== "string" || !candidate.data.length ||
+        candidate.data.length > 4 * Math.ceil(MAX_IMAGE_BYTES / 3) ||
+        candidate.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(candidate.data)) {
+      return Response.json({ error: "Attach one PNG, JPEG or WebP image, up to 3 MB." }, { status: 400 });
+    }
+    const bytes = Buffer.from(candidate.data, "base64");
+    const png = bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    const jpeg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
+    const webp = bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP";
+    const matchesType = candidate.mimeType === "image/png" ? png : candidate.mimeType === "image/jpeg" ? jpeg : webp;
+    if (bytes.length > MAX_IMAGE_BYTES || !matchesType) {
+      return Response.json({ error: "The attachment is not a supported image. Use PNG, JPEG or WebP up to 3 MB." }, { status: 400 });
+    }
+    image = { mimeType: candidate.mimeType, data: candidate.data };
+  }
+  if (!body.message.trim() && !image) {
+    return Response.json({ error: "Enter a message or attach an image." }, { status: 400 });
   }
 
   // Which instruction set reads the message: "academic" (default) or "general".
@@ -104,7 +129,7 @@ export async function POST(request: Request) {
             role: "system",
             content: `${buildInstruction(pipeline, today)}\nReturn only a JSON object, without Markdown or commentary, matching this schema: ${JSON.stringify(schema)}`,
           },
-          { role: "user", content: body.message },
+          { role: "user", content: body.message.trim() || "Extract dated events from the attached image.", ...(image ? { images: [image.data] } : {}) },
         ],
       }),
       signal: AbortSignal.timeout(60_000),

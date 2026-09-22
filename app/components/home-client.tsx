@@ -10,6 +10,7 @@ import PageSkeleton from "./page-skeleton";
 import PendingLink from "./pending-link";
 import { SIGN_IN_CHANNEL, startGoogleSignIn } from "./google-sign-in";
 import type { Session } from "@/lib/session-payload";
+import { IMAGE_TYPES, MAX_IMAGE_BYTES, type ImageInput } from "@/lib/image-input";
 import { passesAcademicFilter, passesGeneralFilter } from "@/lib/input-filter";
 
 
@@ -47,6 +48,40 @@ const signInMessages: Record<string, string> = {
 // It is null only when the database could not be reached; then the browser asks again.
 export default function HomeClient({ initialSession }: { initialSession: Session | null }) {
   const [message, setMessage] = useState("");
+  const [attachment, setAttachment] = useState<(ImageInput & { name: string }) | null>(null);
+  const [readingImage, setReadingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const imageReadId = useRef(0);
+
+  async function attachImage(file: File) {
+    if (loading || syncing || readingImage) return;
+    if (!IMAGE_TYPES.includes(file.type) || file.size > MAX_IMAGE_BYTES || !file.size) {
+      setError("Choose a PNG, JPEG or WebP image up to 3 MB.");
+      return;
+    }
+    const readId = ++imageReadId.current;
+    setReadingImage(true);
+    setError("");
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Could not read image."));
+        reader.onerror = () => reject(new Error("Could not read image."));
+        reader.readAsDataURL(file);
+      });
+      if (readId !== imageReadId.current) return;
+      setAttachment({ name: file.name || "Pasted screenshot", mimeType: file.type, data: dataUrl.slice(dataUrl.indexOf(",") + 1) });
+      resetResults();
+    } catch {
+      if (readId === imageReadId.current) setError("Could not read the image. Try another file.");
+    } finally { if (readId === imageReadId.current) setReadingImage(false); }
+  }
+
+  function clearAttachment() {
+    imageReadId.current++;
+    setAttachment(null);
+    setReadingImage(false);
+  }
   const [response, setResponse] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -190,6 +225,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   }
 
   async function handleSignOut() {
+    clearAttachment();
     try { await fetch("/api/auth/logout", { method: "POST" }); }
     catch { /* The server-side session expires on its own if this fails. */ }
     setSession({ authenticated: false });
@@ -215,6 +251,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
       }
       setSession({ authenticated: false });
       setMessage("");
+      clearAttachment();
       setConfirmingDelete(false);
       setMenuOpen(false);
       resetResults();
@@ -267,7 +304,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
 
     const trimmedMessage = message.trim();
 
-    if (!trimmedMessage || loading || syncing || !session?.authenticated || !session.sheet || !session.hasApiKey || !session.googleAccess) return;
+    if ((!trimmedMessage && !attachment) || readingImage || loading || syncing || !session?.authenticated || !session.sheet || !session.hasApiKey || !session.googleAccess) return;
 
     setError("");
     resetResults();
@@ -278,7 +315,8 @@ export default function HomeClient({ initialSession }: { initialSession: Session
     // This happens BEFORE any request is sent to Gemini
     // or Ollama, so irrelevant messages cost zero AI tokens.
     // --------------------------------------------------
-    const passes = pipeline === "general" ? passesGeneralFilter(trimmedMessage) : passesAcademicFilter(trimmedMessage);
+    // Image text is read by the model; a text-only pre-filter cannot judge it.
+    const passes = Boolean(attachment) || (pipeline === "general" ? passesGeneralFilter(trimmedMessage) : passesAcademicFilter(trimmedMessage));
     if (!passes) {
       addLog(pipeline === "general" ? "Rejected: no date found in the message." : "Rejected: no academic keywords found in the message.", "error");
       setResponse(
@@ -302,9 +340,13 @@ export default function HomeClient({ initialSession }: { initialSession: Session
           message: trimmedMessage,
           pipeline,
           today: localToday(),
+          ...(attachment ? { image: { mimeType: attachment.mimeType, data: attachment.data } } : {}),
         }),
       });
 
+      if (result.status === 413) {
+        throw new Error("The attachment is too large. Try a smaller image.");
+      }
       const data = await result.json();
 
       if (!result.ok) {
@@ -536,7 +578,20 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                   <button type="button" aria-pressed={pipeline === "academic"} data-active={pipeline === "academic"} disabled={loading || syncing} onClick={() => choosePipeline("academic")}>Academic</button>
                 </div>
               </div>
-              <form onSubmit={handleSubmit} className={styles.form}>
+              <form onSubmit={handleSubmit} className={styles.form} onPaste={(event) => {
+                const files = Array.from(event.clipboardData.items).filter((item) => item.kind === "file" && item.type.startsWith("image/"));
+                if (!files.length) return;
+                event.preventDefault();
+                if (files.length > 1) { setError("Attach one image at a time."); return; }
+                const file = files[0].getAsFile();
+                if (file) void attachImage(file);
+              }}>
+                {attachment && <div className={styles.attachment}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`data:${attachment.mimeType};base64,${attachment.data}`} alt="Attached announcement" />
+                  <span>{attachment.name}</span>
+                  <button type="button" disabled={loading || syncing || readingImage} onClick={() => { clearAttachment(); resetResults(); }} aria-label="Remove attached image">Remove ×</button>
+                </div>}
                 <textarea id="message" enterKeyHint="enter" aria-label={pipeline === "general" ? "Task" : "Announcement"} value={message} onChange={(event) => setMessage(event.target.value)}
                   onKeyDown={(event) => {
                     // Touch-first devices keep the keyboard's normal newline behavior.
@@ -546,9 +601,11 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                       event.preventDefault();
                       event.currentTarget.form?.requestSubmit();
                     }
-                  }} placeholder={pipeline === "general" ? "I have to meet with friend at KFC Sept 25" : "CSE340 Quiz 4 is on Sept 27. Don't forget!"} rows={7} required disabled={loading || syncing || !session.sheet} />
+                  }} placeholder={attachment ? "Add context (optional)…" : pipeline === "general" ? "Type a plan, or paste a screenshot here…" : "Type an announcement, or paste a screenshot here…"} rows={7} required={!attachment} maxLength={20000} disabled={loading || syncing || !session.sheet} />
                 <div className={styles.formFooter}>
-                  <button type="submit" className={styles.primary} disabled={loading || syncing || !session.googleAccess || !setupComplete}>
+                  <input ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachImage(file); }} />
+                  <button type="button" className={styles.secondary} disabled={loading || syncing || readingImage || !setupComplete} onClick={() => imageInputRef.current?.click()}>{readingImage ? "Reading image…" : attachment ? "Replace image" : "Add image +"}</button>
+                  <button type="submit" className={styles.primary} disabled={loading || syncing || readingImage || !session.googleAccess || !setupComplete}>
                     {loading ? "Injecting…" : syncing ? "Injecting…" : "Inject ↗"}
                   </button>
                 </div>

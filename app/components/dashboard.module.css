@@ -214,3 +214,9 @@
   .outputFooter { flex-shrink: 0; margin-top: 14px; }
   .outputHint { flex-shrink: 0; margin-top: 8px; }
 }
+
+.attachment { display: flex; align-items: center; gap: 12px; flex-shrink: 0; padding: 10px; margin-bottom: 12px; border: 1px solid #383e33; border-radius: 8px; background: #10130e; }
+.attachment img { width: 84px; height: 64px; object-fit: contain; background: #202020; border-radius: 5px; }
+.attachment > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c6ccb9; font-size: 12px; }
+.attachment button { flex-shrink: 0; color: #c6ccb9; padding: 8px; font-size: 12px; border: 1px solid #3e4535; border-radius: 5px; }
+.attachment button:hover:not(:disabled) { background: #28301f; }
