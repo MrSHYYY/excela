@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 type Event = { course: string; title: string; date: string };
-type Values = { values?: string[][] };
+type Values = { values?: (string | number | boolean)[][] };
 type Sheet = { properties: { title: string; sheetId: number } };
 
 const months = [
@@ -226,10 +226,6 @@ export async function POST(request: Request) {
       `/values:batchGet?${query}&valueRenderOption=FORMATTED_VALUE`
     )) as { valueRanges: Values[] };
 
-    const formulas = (await google(
-      `/values:batchGet?${query}&valueRenderOption=FORMULA`
-    )) as { valueRanges: Values[] };
-
     const updates: {
       range: string;
       label: string;
@@ -245,9 +241,6 @@ export async function POST(request: Request) {
     for (const target of targets) {
       const rangeIndex = ranges.indexOf(target.range);
       const rows = displayed.valueRanges[rangeIndex].values ?? [];
-      const protectedRows =
-        formulas.valueRanges[rangeIndex].values ?? [];
-
       const matches = rows.flatMap((row, index) =>
         String(row[0] ?? "").trim() === String(target.day)
           ? [index]
@@ -283,12 +276,12 @@ export async function POST(request: Request) {
         continue;
       }
 
+      // Fill E → F → G → H using what the user sees. Hidden raw values and
+      // empty-result formulas must not push an event past a visually empty slot.
+      // Only event cells are eligible; date cells are never overwritten.
       const slot = slots.find(
         (index) =>
-          !String(row[index] ?? "").trim() &&
-          !String(
-            protectedRows[rowIndex]?.[index] ?? ""
-          ).trim()
+          String(row[index] ?? "").replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "") === ""
       );
 
       if (slot === undefined) {
@@ -309,6 +302,8 @@ export async function POST(request: Request) {
         columnIndex: slot + 3,
       });
 
+      // Reserve the selected slot so another event on this date uses the next
+      // empty cell, even before this batch has been written to Google Sheets.
       row[slot] = label;
     }
 

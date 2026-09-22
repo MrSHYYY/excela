@@ -537,10 +537,12 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                 </div>
               </div>
               <form onSubmit={handleSubmit} className={styles.form}>
-                <textarea id="message" aria-label={pipeline === "general" ? "Task" : "Announcement"} value={message} onChange={(event) => setMessage(event.target.value)}
+                <textarea id="message" enterKeyHint="enter" aria-label={pipeline === "general" ? "Task" : "Announcement"} value={message} onChange={(event) => setMessage(event.target.value)}
                   onKeyDown={(event) => {
-                    // Enter injects; Shift+Enter adds a new line. Ignored while an input method (IME) is composing text.
-                    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    // Touch-first devices keep the keyboard's normal newline behavior.
+                    // Desktop Enter submits; Shift+Enter and IME composition stay native.
+                    const touchKeyboard = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+                    if (!touchKeyboard && event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
                       event.preventDefault();
                       event.currentTarget.form?.requestSubmit();
                     }
@@ -550,7 +552,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                     {loading ? "Injecting…" : syncing ? "Injecting…" : "Inject ↗"}
                   </button>
                 </div>
-                <p className={styles.hint}>{session.sheet ? "Press Enter to inject · Shift+Enter for a new line." : "Connect or generate a planner to get started."}</p>
+                <p className={styles.hint}>{session.sheet ? <><span className={styles.desktopKeyboardHint}>Press Enter to inject · Shift+Enter for a new line.</span><span className={styles.touchKeyboardHint}>Return adds a new line · Tap Inject when ready.</span></> : "Connect or generate a planner to get started."}</p>
               </form>
             </section>
 

@@ -163,6 +163,11 @@
 
 /* Mobile: "View your sheet" becomes a compact eye-icon button instead of being hidden. */
 .sheetIcon { display: none; }
+.touchKeyboardHint { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .desktopKeyboardHint { display: none; }
+  .touchKeyboardHint { display: inline; }
+}
 .workspaceGate { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .workspaceGate > .workspace { flex: 1; }
 .workspace[data-locked="true"] { filter: blur(3px); opacity: .5; pointer-events: none; user-select: none; }
