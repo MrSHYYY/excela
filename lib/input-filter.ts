@@ -76,6 +76,9 @@ function hasDateSignal(message: string): boolean {
     mentionsAny(message, MONTH_WORDS) ||
     mentionsAny(message, RELATIVE_DAY_WORDS) ||
     /\b\d{1,4}[/-]\d{1,2}\b/.test(message) ||
+    // Let the model distinguish day-of-month phrases from times and quantities.
+    /\b(?:at|on|by|the)\s+(?:the\s+)?(?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?\b/i.test(message) ||
+    /\b(?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)\b/i.test(message) ||
     /\b(in \d+ days?|\d+ days? (ago|from now))\b/i.test(message)
   );
 }

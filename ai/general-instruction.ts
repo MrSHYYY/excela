@@ -16,7 +16,7 @@ Do not limit it to academic events.
 Extract only a short title and the date.
 Do not extract time, place, people, notes, priority, or other details.
 Each item requires a date: an explicit month and day (the year is optional),
-or a relative day as described under "Relative dates" at the end.
+a relative day, or a day-of-month number as described in the rules below.
 Never invent or infer any other missing information.
 Items without a date are not extracted.
 
@@ -33,7 +33,7 @@ Each event must contain exactly course, title, and date, all as strings.
 Always use "" for course.
 Use title for a short, clear description of the task in a few words, written as a
 plain phrase without the date, such as "Dry clean the suit". Each event needs a non-empty title.
-Use YYYY-MM-DD when a year is stated or when the date comes from the relative-date table, otherwise MM-DD. Never supply a guessed year.
+Use YYYY-MM-DD when a year is stated or when the date comes from the relative-date or day-only table, otherwise MM-DD. Never supply a guessed year.
 Reject impossible dates and ambiguous numeric dates (such as 04/09) rather than guessing.
 Example input: dry clean the suit on sept 4
 Example output: {"accepted":true,"events":[{"course":"","title":"Dry clean the suit","date":"09-04"}]}

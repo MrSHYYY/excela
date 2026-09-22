@@ -12,7 +12,7 @@ presentations, classes, meetings, and deadlines.
 Extract only the course, event title, and date.
 Do not extract time, syllabus, duration, marks, notes, or other details.
 Each event requires a date: an explicit month and day (the year is optional),
-or a relative day as described under "Relative dates" at the end.
+a relative day, or a day-of-month number as described in the rules below.
 Never invent or infer any other missing information.
 
 Create separate events for separate announcements or section/group dates.
@@ -28,7 +28,7 @@ The top-level object must contain exactly "accepted" (boolean) and "events" (arr
 Each event must contain exactly course, title, and date, all as strings.
 Use course for the stated course code, such as "CSE340"; use "" if not stated.
 Use title for the event name, such as "QUIZ4". Each event needs a non-empty title.
-Use YYYY-MM-DD when a year is stated or when the date comes from the relative-date table, otherwise MM-DD. Never supply a guessed year.
+Use YYYY-MM-DD when a year is stated or when the date comes from the relative-date or day-only table, otherwise MM-DD. Never supply a guessed year.
 Reject impossible dates and ambiguous numeric dates rather than guessing.
 Example input: CSE340 QUIZ4 SEPT 27
 Example output: {"accepted":true,"events":[{"course":"CSE340","title":"QUIZ4","date":"09-27"}]}

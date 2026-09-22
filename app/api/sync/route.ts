@@ -8,6 +8,22 @@ export const maxDuration = 60;
 type Event = { course: string; title: string; date: string };
 type Values = { values?: (string | number | boolean)[][] };
 type Sheet = { properties: { title: string; sheetId: number } };
+type Color = { red?: number; green?: number; blue?: number };
+type GridCell = {
+  formattedValue?: string;
+  effectiveFormat?: {
+    backgroundColor?: Color;
+    textFormat?: { foregroundColor?: Color };
+  };
+};
+type GridSheet = {
+  properties: { sheetId: number };
+  data?: { startRow?: number; startColumn?: number; rowData?: { values?: GridCell[] }[] }[];
+};
+
+function isWhite(color: Color | undefined): boolean {
+  return Boolean(color && (color.red ?? 0) >= 0.999 && (color.green ?? 0) >= 0.999 && (color.blue ?? 0) >= 0.999);
+}
 
 const months = [
   "jan",
@@ -222,9 +238,35 @@ export async function POST(request: Request) {
       .map((range) => `ranges=${encodeURIComponent(range)}`)
       .join("&");
 
-    const displayed = (await google(
-      `/values:batchGet?${query}&valueRenderOption=FORMATTED_VALUE`
-    )) as { valueRanges: Values[] };
+    // Read values and visible formatting together. Resetting the fill leaves
+    // Excela's white text invisible; the user treats those event slots as cleared.
+    const grid = (await google(
+      `?${query}&fields=sheets(properties(sheetId),data(startRow,startColumn,rowData(values(formattedValue,effectiveFormat(backgroundColor,textFormat(foregroundColor))))))`
+    )) as { sheets: GridSheet[] };
+    const displayed: { valueRanges: Values[] } = {
+      valueRanges: ranges.map((range) => {
+        const target = targets.find((item) => item.range === range)!;
+        const sheet = grid.sheets.find((item) => item.properties.sheetId === target.sheetId);
+        const rows: NonNullable<Values["values"]> = [];
+        for (const block of sheet?.data ?? []) {
+          for (const [offset, row] of (block.rowData ?? []).entries()) {
+            const rowIndex = (block.startRow ?? 0) + offset - 2;
+            if (rowIndex < 0 || rowIndex >= 43) continue;
+            rows[rowIndex] ??= [];
+            for (const [columnOffset, cell] of (row.values ?? []).entries()) {
+              const column = (block.startColumn ?? 0) + columnOffset - 3;
+              if (column < 0 || column > 4) continue;
+              const format = cell.effectiveFormat;
+              const resetFill = column > 0 &&
+                isWhite(format?.textFormat?.foregroundColor) &&
+                (!format?.backgroundColor || isWhite(format.backgroundColor));
+              rows[rowIndex][column] = resetFill ? "" : (cell.formattedValue ?? "");
+            }
+          }
+        }
+        return { values: rows };
+      }),
+    };
 
     const updates: {
       range: string;
