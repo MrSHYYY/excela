@@ -25,6 +25,19 @@ function isWhite(color: Color | undefined): boolean {
   return Boolean(color && (color.red ?? 0) >= 0.999 && (color.green ?? 0) >= 0.999 && (color.blue ?? 0) >= 0.999);
 }
 
+// Recognize red fills (including older lighter reds), not blue/neutral/other task colors.
+function isPendingRed(color: Color | undefined): boolean {
+  if (!color) return false;
+  const { red = 0, green = 0, blue = 0 } = color;
+  return red >= 0.3 && green < red * 0.6 && blue < red * 0.6 && Math.abs(green - blue) < 0.15;
+}
+
+// Only reverse Excela's completed blue (#1e3a8a), not other blue planner decoration.
+function isCompletedBlue(color: Color | undefined): boolean {
+  return Boolean(color && Math.abs((color.red ?? 0) - 30 / 255) < 0.005 &&
+    Math.abs((color.green ?? 0) - 58 / 255) < 0.005 && Math.abs((color.blue ?? 0) - 138 / 255) < 0.005);
+}
+
 const months = [
   "jan",
   "feb",
@@ -125,15 +138,25 @@ export async function POST(request: Request) {
       throw new SyncError("Invalid JSON body.");
     }
 
-    if (
+    const completing = body?.action === "complete_day";
+    const uncompleting = body?.action === "uncomplete_day";
+    const formatting = completing || uncompleting;
+    if (body?.action !== undefined && !["add_events", "complete_day", "uncomplete_day"].includes(body.action)) {
+      throw new SyncError("Unsupported planner action.");
+    }
+    if (formatting && (typeof body.date !== "string" || !/^(?:\d{4}-)?\d{2}-\d{2}$/.test(body.date) || (body.events !== undefined && (!Array.isArray(body.events) || body.events.length)))) {
+      throw new SyncError("Provide one completion date without new events.");
+    }
+    if (!formatting && (
       !Array.isArray(body?.events) ||
       !body.events.length ||
       body.events.length > 50
-    ) {
+    )) {
       throw new SyncError("Provide between 1 and 50 extracted events.");
     }
 
-    const events = body.events.map(parseEvent) as Event[];
+    // Reuse the same month/year and day-row lookup for both actions.
+    const events: Event[] = formatting ? [{ course: "", title: "", date: body.date }] : body.events.map(parseEvent);
 
     let token: string;
 
@@ -243,6 +266,7 @@ export async function POST(request: Request) {
     const grid = (await google(
       `?${query}&fields=sheets(properties(sheetId),data(startRow,startColumn,rowData(values(formattedValue,effectiveFormat(backgroundColor,textFormat(foregroundColor))))))`
     )) as { sheets: GridSheet[] };
+    const cells = new Map<string, GridCell>();
     const displayed: { valueRanges: Values[] } = {
       valueRanges: ranges.map((range) => {
         const target = targets.find((item) => item.range === range)!;
@@ -256,6 +280,7 @@ export async function POST(request: Request) {
             for (const [columnOffset, cell] of (row.values ?? []).entries()) {
               const column = (block.startColumn ?? 0) + columnOffset - 3;
               if (column < 0 || column > 4) continue;
+              cells.set(`${target.sheetId}:${rowIndex + 2}:${column + 3}`, cell);
               const format = cell.effectiveFormat;
               const resetFill = column > 0 &&
                 isWhite(format?.textFormat?.foregroundColor) &&
@@ -297,6 +322,19 @@ export async function POST(request: Request) {
 
       const rowIndex = matches[0];
       const row = rows[rowIndex];
+
+      if (formatting) {
+        for (const slot of [1, 2, 3, 4]) {
+          const cell = cells.get(`${target.sheetId}:${rowIndex + 2}:${slot + 3}`);
+          const text = cell?.formattedValue ?? "";
+          const eligible = completing ? isPendingRed(cell?.effectiveFormat?.backgroundColor) : isCompletedBlue(cell?.effectiveFormat?.backgroundColor);
+          if (!text.replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "") || !eligible) continue;
+          const address = `${"DEFGH"[slot]}${rowIndex + 3}`;
+          updates.push({ range: `'${target.sheet.replaceAll("'", "''")}'!${address}`, label: text,
+            sheet: target.sheet, cell: address, sheetId: target.sheetId, rowIndex: rowIndex + 2, columnIndex: slot + 3 });
+        }
+        continue;
+      }
 
       const label = [target.event.course, target.event.title]
         .filter(Boolean)
@@ -363,15 +401,15 @@ export async function POST(request: Request) {
                 endColumnIndex: update.columnIndex + 1,
               },
               cell: {
-                userEnteredValue: {
+                ...(formatting ? {} : { userEnteredValue: {
                   stringValue: update.label,
-                },
+                } }),
                 userEnteredFormat: {
                   backgroundColorStyle: {
                     rgbColor: {
-                      red: 153 / 255,
-                      green: 27 / 255,
-                      blue: 27 / 255,
+                      red: completing ? 30 / 255 : 153 / 255,
+                      green: completing ? 58 / 255 : 27 / 255,
+                      blue: completing ? 138 / 255 : 27 / 255,
                     },
                   },
                   textFormat: {
@@ -385,8 +423,7 @@ export async function POST(request: Request) {
                   },
                 },
               },
-              fields:
-                "userEnteredValue,userEnteredFormat.backgroundColorStyle,userEnteredFormat.textFormat.foregroundColorStyle",
+              fields: `${formatting ? "" : "userEnteredValue,"}userEnteredFormat.backgroundColorStyle,userEnteredFormat.textFormat.foregroundColorStyle`,
             },
           })),
         }),
@@ -429,7 +466,10 @@ export async function POST(request: Request) {
     }
 
     return Response.json({
-      written: updates.length,
+      action: completing ? "complete_day" : uncompleting ? "uncomplete_day" : "add_events",
+      written: formatting ? 0 : updates.length,
+      completed: completing ? updates.length : 0,
+      uncompleted: uncompleting ? updates.length : 0,
       skipped,
       cells: updates.map(({ range }) => range),
       links,

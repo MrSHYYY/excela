@@ -69,15 +69,21 @@ async function inject(site, token, message, job) {
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const data = await request(site, token, "/api/ai", { message: message.text, pipeline: message.pipeline, today, ...(message.image ? { image: message.image } : {}) });
     const events = data.response?.events;
-    if (!Array.isArray(events) || !events.length) {
-      job.message = "Declined — no dated events found. Nothing was written.";
+    const action = data.response?.action;
+    const completionDate = ["complete_day", "uncomplete_day"].includes(action) && typeof data.response.date === "string" ? data.response.date : null;
+    if (!completionDate && (!Array.isArray(events) || !events.length)) {
+      job.message = "Declined — no supported planner action found. Nothing changed.";
       return;
     }
     if (await sessionToken(site) !== token) throw new Error("Your login changed. Sign in and try again.");
-    job.message = "Writing to your planner…";
+    job.message = completionDate ? (action === "uncomplete_day" ? "Marking completed tasks pending…" : "Marking pending tasks complete…") : "Writing to your planner…";
     writing = true;
-    const result = await request(site, token, "/api/sync", { events });
-    job.message = `Injected: ${result.written} event(s) written, ${result.skipped} already present.`;
+    const result = await request(site, token, "/api/sync", completionDate ? { action, date: completionDate } : { action: "add_events", events });
+    job.message = completionDate
+      ? action === "uncomplete_day"
+        ? (result.uncompleted ? `Marked pending: ${result.uncompleted} task(s) on ${completionDate}.` : `No completed blue tasks on ${completionDate}. Nothing changed.`)
+        : (result.completed ? `Completed: ${result.completed} task(s) on ${completionDate}.` : `No pending red tasks on ${completionDate}. Nothing changed.`)
+      : `Injected: ${result.written} event(s) written, ${result.skipped} already present.`;
   } catch (error) {
     job.failed = true;
     job.message = (error.message || "Injection failed.") + (writing ? " Check your sheet before retrying." : "");

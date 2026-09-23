@@ -100,6 +100,8 @@ export async function POST(request: Request) {
       type: "object",
       properties: {
         accepted: { type: "boolean" },
+        action: { type: "string", enum: ["add_events", "complete_day", "uncomplete_day", "declined"] },
+        date: { type: "string" },
         events: {
           type: "array",
           items: {
@@ -110,7 +112,7 @@ export async function POST(request: Request) {
           },
         },
       },
-      required: ["accepted", "events"],
+      required: ["accepted", "action", "events"],
       additionalProperties: false,
     };
 
@@ -180,13 +182,24 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!extracted.accepted && extracted.events.length === 0) {
+    const action = "action" in extracted ? extracted.action : (extracted.accepted ? "add_events" : "declined");
+    if (action === "complete_day" || action === "uncomplete_day") {
+      const date = "date" in extracted ? extracted.date : undefined;
+      const fullDate = typeof date === "string" && /^\d{2}-\d{2}$/.test(date) ? `2000-${date}` : date;
+      if (!extracted.accepted || extracted.events.length || !body.message.trim() || !parseToday(fullDate)) {
+        return Response.json({ error: "Ollama returned an invalid completion date. Please specify the day clearly." }, { status: 502 });
+      }
+      return Response.json({ response: { action, date, events: [] } });
+    }
+
+    if (action === "declined" && !extracted.accepted && extracted.events.length === 0) {
       return Response.json({ response: "Declined" });
     }
 
     if (
-      !extracted.accepted ||
+      action !== "add_events" || !extracted.accepted ||
       extracted.events.length === 0 ||
+      extracted.events.length > 50 ||
       !extracted.events.every(isPlannerEvent)
     ) {
       return Response.json(
@@ -201,7 +214,7 @@ export async function POST(request: Request) {
       const fullDate = /^\d{2}-\d{2}$/.test(event.date) ? `2000-${event.date}` : event.date;
       const parsedDate = new Date(`${fullDate}T00:00:00Z`);
       if (
-        !event.title.trim() ||
+        !event.title.trim() || event.title.length > 200 || event.course.length > 80 ||
         !/^(?:\d{4}-)?\d{2}-\d{2}$/.test(event.date) ||
         Number.isNaN(parsedDate.getTime()) ||
         parsedDate.toISOString().slice(0, 10) !== fullDate
@@ -214,7 +227,7 @@ export async function POST(request: Request) {
     }
 
     return Response.json({
-      response: { events: events.map((event) => Object.fromEntries(fields.map((field) => [field, event[field]]))) },
+      response: { action: "add_events", events: events.map((event) => Object.fromEntries(fields.map((field) => [field, event[field]]))) },
     });
   } catch {
     return Response.json(

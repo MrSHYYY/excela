@@ -14,6 +14,10 @@ There is no extension build step. Temporary add-ons are removed when Firefox res
 
 ## Behavior
 
+- To reverse completion, use `unmark today`, `unmark yesterday`, `unmark sept 25`, or `unmark 24`. Only nonempty cells with Excela's completed dark-blue fill return to pending red with white text. A bare day uses the current month. Empty cells, red tasks, and other colors are untouched; `unmark` without a date is declined.
+
+- Completion commands work in both General and Academic: `clear today`, `clear yesterday`, `clear sept 25`, `clear 24`, or `mark today's schedule clear`. A bare day uses the current month for completion. Only nonempty red event cells are formatted dark blue with white text; text is preserved. Empty days and already-completed tasks are unchanged. Deploy the matching AI/sync changes and reload the extension to enable this action. Messages go to AI without the former keyword filter; the backend still validates permitted actions and dates.
+
 - First install opens the website for onboarding. Subsequent popup opens create no tabs. Only explicit sign-in/setup or website buttons open a tab.
 - Sign-in is checked through the existing `excela_session` cookie using Firefox's privileged cookies API. It is sent only to the selected Excela origin as a bearer token, never to AI providers or to the popup. The server verifies its hash, expiration, and account on each AI/sync request. Invalid bearer headers never fall back to cookie authentication. Website cookie requests retain their origin checks.
 - The API key stays encrypted in the account database. The extension stores only the selected site preference on disk. Account status is cached in background memory for up to 60 seconds, invalidated by login-cookie changes; injection routes always authenticate on the server.

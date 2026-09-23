@@ -11,10 +11,8 @@ import PendingLink from "./pending-link";
 import { SIGN_IN_CHANNEL, startGoogleSignIn } from "./google-sign-in";
 import type { Session } from "@/lib/session-payload";
 import { IMAGE_TYPES, MAX_IMAGE_BYTES, type ImageInput } from "@/lib/image-input";
-import { passesAcademicFilter, passesGeneralFilter } from "@/lib/input-filter";
 
 
-// The input pre-filters (forgiving of typos) live in lib/input-filter.ts.
 type Pipeline = "academic" | "general";
 
 type ViewLink = { sheet: string; url: string; base: string; gid: number; row: number };
@@ -89,6 +87,8 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   const [outputTab, setOutputTab] = useState<"json" | "log">("json");
   const [logs, setLogs] = useState<{ time: string; text: string; tone: "info" | "ok" | "error" }[]>([]);
   const [events, setEvents] = useState<{ course: string; title: string; date: string }[]>([]);
+  const [completionDate, setCompletionDate] = useState<string | null>(null);
+  const [dayAction, setDayAction] = useState<"complete_day" | "uncomplete_day">("complete_day");
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
@@ -216,6 +216,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   }
 
   function resetResults() {
+    setCompletionDate(null);
     setLogs([]);
     setViewLinks([]);
     setResponse("");
@@ -264,7 +265,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   }
 
   // Writes events to the user's planner. Runs right after extraction (Inject) and for "Retry sync".
-  async function runSync(list: { course: string; title: string; date: string }[]) {
+  async function runSync(list: { course: string; title: string; date: string }[], date: string | null = null, action: "complete_day" | "uncomplete_day" = "complete_day") {
     setSyncing(true);
     addLog("Writing to your planner…");
     setSyncMessage("");
@@ -274,7 +275,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
       const result = await fetch("/api/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ events: list }),
+        body: JSON.stringify(date ? { action, date } : { action: "add_events", events: list }),
       });
       const data = await result.json();
       if (!result.ok) {
@@ -282,8 +283,13 @@ export default function HomeClient({ initialSession }: { initialSession: Session
         throw new Error(data.error || "Unable to sync with Google Sheets.");
       }
       setSynced(true);
-      setSyncMessage(`Injected: ${data.written} event(s) written, ${data.skipped} already present.`);
-      addLog(`Injected: ${data.written} event(s) written, ${data.skipped} already present.`, "ok");
+      const summary = date
+        ? action === "uncomplete_day"
+          ? (data.uncompleted ? `Marked pending: ${data.uncompleted} task(s) on ${date}.` : `No completed blue tasks on ${date}. Nothing changed.`)
+          : (data.completed ? `Completed: ${data.completed} task(s) on ${date}.` : `No pending red tasks on ${date}. Nothing changed.`)
+        : `Injected: ${data.written} event(s) written, ${data.skipped} already present.`;
+      setSyncMessage(summary);
+      addLog(summary, "ok");
       setViewLinks(Array.isArray(data.links) ? data.links : []);
     } catch (error) {
       addLog(error instanceof Error ? error.message : "Unable to sync with Google Sheets.", "error");
@@ -295,8 +301,8 @@ export default function HomeClient({ initialSession }: { initialSession: Session
 
   // Retries only the planner step, so the AI isn't called (and charged) again after a failed sync.
   async function handleSync() {
-    if (!events.length || syncing || synced || loading) return;
-    await runSync(events);
+    if ((!events.length && !completionDate) || syncing || synced || loading) return;
+    await runSync(events, completionDate, dayAction);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -308,24 +314,6 @@ export default function HomeClient({ initialSession }: { initialSession: Session
 
     setError("");
     resetResults();
-
-    // --------------------------------------------------
-    // LOCAL PRE-FILTER
-    // --------------------------------------------------
-    // This happens BEFORE any request is sent to Gemini
-    // or Ollama, so irrelevant messages cost zero AI tokens.
-    // --------------------------------------------------
-    // Image text is read by the model; a text-only pre-filter cannot judge it.
-    const passes = Boolean(attachment) || (pipeline === "general" ? passesGeneralFilter(trimmedMessage) : passesAcademicFilter(trimmedMessage));
-    if (!passes) {
-      addLog(pipeline === "general" ? "Rejected: no date found in the message." : "Rejected: no academic keywords found in the message.", "error");
-      setResponse(
-        pipeline === "general"
-          ? "Rejected by input filter \u2014 this message does not appear to contain a date."
-          : "Rejected by input filter \u2014 this message does not appear to contain an academic event."
-      );
-      return;
-    }
 
     setLoading(true);
     addLog(`Reading your message with Ollama (${pipeline} pipeline)…`);
@@ -363,15 +351,19 @@ export default function HomeClient({ initialSession }: { initialSession: Session
       }
 
       const extracted = Array.isArray(data.response?.events) ? data.response.events : [];
+      const action = data.response?.action === "uncomplete_day" ? "uncomplete_day" : "complete_day";
+      const date = ["complete_day", "uncomplete_day"].includes(data.response?.action) && typeof data.response.date === "string" ? data.response.date : null;
+      setDayAction(action);
+      setCompletionDate(date);
       setEvents(extracted);
       setResponse(
         typeof data.response === "string"
           ? data.response
           : JSON.stringify(data.response, null, 2)
       );
-      addLog(extracted.length ? `Found ${extracted.length} event(s).` : "No events found in that message.", extracted.length ? "ok" : "info");
+      addLog(date ? `Marking tasks ${action === "uncomplete_day" ? "pending" : "complete"} on ${date}.` : extracted.length ? `Found ${extracted.length} event(s).` : "Declined: no supported planner action found.", date || extracted.length ? "ok" : "info");
       // Inject = extract with AI, then write straight to the planner.
-      if (extracted.length) await runSync(extracted);
+      if (date || extracted.length) await runSync(extracted, date, action);
       else setSyncMessage("No events were found in that message, so nothing was injected.");
     } catch (error) {
       addLog(error instanceof Error ? error.message : "Something went wrong.", "error");
@@ -648,7 +640,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                               onClick={(event) => {
                                 event.currentTarget.href = centeredSheetUrl(link);
                               }} href={link.url} target="_blank" rel="noopener noreferrer" className={styles.secondary}>{viewLinks.length > 1 ? 'View changes in ' + link.sheet : "View changes"} ↗</a>)}
-                {events.length > 0 && !synced && !loading && !syncing && <button type="button" className={styles.primary} onClick={handleSync} disabled={!session.googleAccess}>Retry sync ↗</button>}
+                {(events.length > 0 || completionDate) && !synced && !loading && !syncing && <button type="button" className={styles.primary} onClick={handleSync} disabled={!session.googleAccess}>Retry sync ↗</button>}
                 {syncMessage && <p role="status" className={styles.outputStatus} data-tone={synced ? undefined : "info"}>{syncMessage}</p>}
               </div>
               <p role="status" className={`${styles.hint} ${styles.outputHint}`}>{syncing ? "Writing to your planner…" : loading ? "Reading your message…" : "Use LOG to follow each step of an injection."}</p>
