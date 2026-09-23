@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Excela — Quick Inject",
+  "version": "0.2.0",
+  "description": "Send announcements to your connected Excela planner from a compact popup.",
+  "browser_specific_settings": {
+    "gecko": { "id": "excela-local@excela.app", "strict_min_version": "121.0" }
+  },
+  "permissions": ["scripting", "storage"],
+  "host_permissions": ["https://excela.cfat.site/*", "https://localhost/*"],
+  "background": { "scripts": ["background.js"] },
+  "action": { "default_title": "Excela", "default_popup": "popup.html", "default_icon": "logo.png" },
+  "icons": { "48": "logo.png", "96": "logo.png" }
+}

@@ -25,6 +25,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/* Excela supplies its own dark theme; avoid extension mutations before hydration. */}
+        <meta name="darkreader-lock" />
+      </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

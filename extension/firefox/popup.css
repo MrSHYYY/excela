@@ -1,0 +1,27 @@
+:root { color-scheme: dark; font: 14px system-ui, sans-serif; background: #090909; color: #f2f2f0; }
+* { box-sizing: border-box; }
+body { width: 360px; margin: 0; padding: 22px; }
+header { display: flex; align-items: center; gap: 9px; }
+strong { font-size: 25px; letter-spacing: -1.2px; }
+strong span { color: #bed596; }
+header button { margin-left: auto; background: transparent; font-size: 22px; padding: 4px 10px; }
+#planner { color: #a9ad9f; font-size: 12px; overflow-wrap: anywhere; margin: 16px 0 22px; }
+label { display: block; margin-bottom: 10px; font-size: 15px; }
+textarea { width: 100%; min-height: 130px; max-height: 260px; resize: vertical; background: #151515; border: 1px solid #333; border-radius: 10px; padding: 13px; color: inherit; font: inherit; line-height: 1.5; }
+textarea:focus-visible, button:focus-visible, select:focus-visible { outline: 2px solid #bed596; outline-offset: 3px; }
+.actions { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 10px; }
+button, select { font: inherit; color: inherit; border: 1px solid #333; border-radius: 7px; background: #191919; padding: 10px 13px; }
+button { cursor: pointer; }
+button:disabled, textarea:disabled { opacity: .5; cursor: default; }
+#inject, #setup { background: #c1d7a1; color: #171c11; border-color: transparent; font-weight: 600; }
+#setup { width: 100%; margin-top: 16px; }
+#status { font-size: 13px; color: #c1d7a1; line-height: 1.5; overflow-wrap: anywhere; }
+#status[data-error="true"] { color: #ffaaa5; }
+footer { font-size: 11px; color: #818178; margin-top: 20px; }
+#attachment:not([hidden]) { display: flex; align-items: center; gap: 8px; padding: 8px; margin-bottom: 10px; border: 1px solid #333; border-radius: 8px; }
+#preview { width: 64px; height: 54px; object-fit: contain; }
+#filename { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+#remove-image { padding: 6px; font-size: 11px; }
+.environment { display: flex; align-items: center; gap: 10px; margin: 16px 0; }
+.environment label { margin: 0; font-size: 12px; color: #a9ad9f; }
+.environment select { flex: 1; min-width: 0; font-size: 12px; padding: 8px; }
