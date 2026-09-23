@@ -2,6 +2,7 @@
 // Only the site preference is saved to disk. Tokens and jobs stay in memory.
 const SITES = ["https://excela.cfat.site", "https://localhost:3000"];
 const accounts = new Map();
+const accountRequests = new Map();
 const jobs = new Map();
 const emptyJob = () => ({ busy: false, failed: false, message: "" });
 
@@ -36,11 +37,26 @@ async function account(site, token) {
   if (!token) { accounts.delete(site); return { authenticated: false }; }
   const cached = accounts.get(site);
   if (cached?.token === token && cached.expires > Date.now()) return cached.session;
-  const session = await request(site, token, "/api/extension/session");
-  if (session.authenticated && session.sheet && session.hasApiKey && session.googleAccess) {
-    accounts.set(site, { token, session, expires: Date.now() + 60000 });
-  } else accounts.delete(site);
-  return session;
+  const pending = accountRequests.get(site);
+  if (pending?.token === token) return pending.promise;
+  const promise = (async () => {
+    const session = await request(site, token, "/api/extension/session");
+    // Ignore stale responses if the user signed out or changed accounts meanwhile.
+    if (await sessionToken(site) === token) {
+      if (session.authenticated && session.sheet && session.hasApiKey && session.googleAccess) {
+        accounts.set(site, { token, session, expires: Date.now() + 60000 });
+      } else accounts.delete(site);
+    }
+    return session;
+  })();
+  accountRequests.set(site, { token, promise });
+  try { return await promise; }
+  finally { if (accountRequests.get(site)?.promise === promise) accountRequests.delete(site); }
+}
+
+async function warmAccount(site) {
+  try { await account(site, await sessionToken(site)); }
+  catch { /* The popup shows connection errors when opened; never open a tab here. */ }
 }
 
 async function inject(site, token, message, job) {
@@ -68,12 +84,13 @@ async function inject(site, token, message, job) {
   } finally { job.busy = false; }
 }
 
-browser.cookies.onChanged.addListener(({ cookie }) => {
+browser.cookies.onChanged.addListener(({ cookie, removed }) => {
   if (cookie.name !== "excela_session") return;
   for (const site of SITES) {
     if (new URL(site).hostname === cookie.domain.replace(/^\./, "")) {
       accounts.delete(site);
       if (!jobs.get(site)?.busy) jobs.delete(site);
+      if (!removed) void warmAccount(site);
     }
   }
 });
@@ -96,6 +113,8 @@ browser.runtime.onMessage.addListener((message, sender) => {
       const currentJob = jobs.get(site);
       const job = currentJob?.token === token ? currentJob : emptyJob();
       const publicJob = () => ({ busy: job.busy, failed: job.failed, message: job.message });
+      // Local-only snapshot: allow drafting before the network account check finishes.
+      if (message.type === "snapshot") return { canCompose: Boolean(token), job: publicJob() };
       if (message.type === "job") return { job: publicJob() };
       if (message.type === "status") return { session: await account(site, token), job: publicJob() };
       if (message.type !== "inject") throw new Error("Unknown command.");
@@ -116,3 +135,6 @@ browser.runtime.onMessage.addListener((message, sender) => {
     }
   })();
 });
+
+// Start the account lookup before the popup opens, without periodic server polling.
+void browser.storage.local.get("site").then(({ site }) => warmAccount(SITES.includes(site) ? site : SITES[0])).catch(() => {});

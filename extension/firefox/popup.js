@@ -9,6 +9,7 @@ let checking = true;
 let refreshId = 0;
 const send = (message) => browser.runtime.sendMessage({ ...message, site });
 let ready = false;
+let canCompose = false;
 let busy = false;
 let authenticated = false;
 let timer;
@@ -19,18 +20,19 @@ const removeImage = document.getElementById("remove-image");
 
 function updateControls() {
   sitePicker.disabled = busy || readingImage || sending;
-  document.getElementById("loading").hidden = !checking || ready;
-  document.getElementById("form").hidden = !ready;
-  document.getElementById("keyboard-hint").hidden = !ready;
+  document.getElementById("loading").hidden = !checking || canCompose;
+  document.getElementById("form").hidden = !canCompose;
+  document.getElementById("keyboard-hint").hidden = !canCompose;
+  button.textContent = busy ? "Injecting…" : checking ? "Connecting…" : "Inject ↗";
   button.disabled = !ready || busy || readingImage || checking;
-  field.disabled = !ready || busy;
+  field.disabled = !canCompose || busy;
   field.required = !image;
   pipeline.disabled = busy;
   removeImage.disabled = busy || readingImage;
 }
 
 async function attachImage(file) {
-  if (!ready || busy || readingImage) return;
+  if (!canCompose || busy || readingImage) return;
   if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || !file.size || file.size > 3 * 1024 * 1024) {
     status.textContent = "Paste one PNG, JPEG or WebP image up to 3 MB.";
     status.dataset.error = "true";
@@ -52,7 +54,7 @@ async function attachImage(file) {
     document.getElementById("filename").textContent = file.name || "Pasted screenshot";
     document.getElementById("attachment").hidden = false;
     field.placeholder = "Add context (optional)…";
-    status.textContent = "Image attached. Ready to inject.";
+    status.textContent = ready && !checking ? "Image attached. Ready to inject." : "Image attached. Checking your connection…";
     status.dataset.error = "false";
   } catch (error) {
     status.textContent = error.message;
@@ -105,6 +107,7 @@ async function refresh() {
     const session = result.session;
     authenticated = Boolean(session?.authenticated);
     ready = Boolean(authenticated && session.sheet && session.hasApiKey && session.googleAccess);
+    canCompose = ready;
     setup.hidden = ready;
     setup.textContent = authenticated ? "Complete setup ↗" : "Sign in to Excela ↗";
     document.getElementById("planner").textContent = ready ? `Connected · ${session.sheet.title}` : authenticated ? "Complete your Excela setup to continue." : "Sign in to Excela to continue.";
@@ -136,6 +139,21 @@ async function pollJob() {
 }
 document.getElementById("retry").addEventListener("click", refresh);
 
+async function prepare() {
+  const id = ++refreshId;
+  try {
+    const snapshot = await send({ type: "snapshot" });
+    if (id !== refreshId) return;
+    canCompose = Boolean(snapshot.canCompose);
+    renderJob(snapshot.job);
+    if (canCompose) {
+      document.getElementById("planner").textContent = "Start typing — connecting in the background…";
+      field.focus();
+    }
+  } catch { /* Fall through to the normal account check and its error UI. */ }
+  if (id === refreshId) await refresh();
+}
+
 document.getElementById("form").addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!ready || busy || sending || readingImage || checking || (!field.value.trim() && !image)) return;
@@ -163,6 +181,7 @@ sitePicker.addEventListener("change", async () => {
   clearTimeout(timer);
   site = sitePicker.value;
   ready = false;
+  canCompose = false;
   authenticated = false;
   checking = true;
   field.value = "";
@@ -171,7 +190,7 @@ sitePicker.addEventListener("change", async () => {
   document.getElementById("planner").textContent = "Connecting to Excela…";
   try { await browser.storage.local.set({ site }); }
   catch { /* Selection still works for this popup if saving fails. */ }
-  await refresh();
+  await prepare();
 });
 async function initialize() {
   try {
@@ -179,6 +198,6 @@ async function initialize() {
     if (["https://excela.cfat.site", "https://localhost:3000"].includes(saved.site)) site = saved.site;
   } catch { /* Default to the live site. */ }
   sitePicker.value = site;
-  await refresh();
+  await prepare();
 }
 void initialize();
