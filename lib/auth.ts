@@ -47,8 +47,11 @@ export async function deleteSession(token: string | undefined) {
 }
 
 /** The signed-in user for this request, or null. Throws if the database is unreachable. */
-export async function getSessionUser(): Promise<{ user: UserDoc; session: SessionDoc } | null> {
-  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+export async function getSessionUser(request?: Request): Promise<{ user: UserDoc; session: SessionDoc } | null> {
+  // Routes must explicitly opt in. A supplied header never falls back to cookies.
+  const token = request?.headers.has("authorization")
+    ? bearerSessionToken(request)
+    : (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   // One round trip: find the session and join its user, instead of two sequential queries.
   const [found] = await (await sessionsCollection())
@@ -79,4 +82,13 @@ export async function renewSession(session: SessionDoc) {
 export function isSameOrigin(request: Request) {
   const origin = request.headers.get("origin");
   return Boolean(origin) && origin === new URL(request.url).origin;
+}
+
+function bearerSessionToken(request: Request): string | undefined {
+  return /^Bearer ([A-Za-z0-9_-]{43})$/.exec(request.headers.get("authorization") ?? "")?.[1];
+}
+
+/** Cookie requests retain CSRF protection; bearer tokens are verified by getSessionUser(request). */
+export function isPlannerRequest(request: Request) {
+  return isSameOrigin(request) || Boolean(bearerSessionToken(request));
 }

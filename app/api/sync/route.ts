@@ -1,5 +1,5 @@
 import { GoogleAccessError, googleAccessToken } from "@/ai/google-auth";
-import { getSessionUser, isSameOrigin } from "@/lib/auth";
+import { getSessionUser, isPlannerRequest } from "@/lib/auth";
 import { monthTabPattern } from "@/lib/sheet";
 
 export const runtime = "nodejs";
@@ -83,7 +83,7 @@ function parseEvent(value: unknown): Event {
 
 export async function POST(request: Request) {
   try {
-    if (!isSameOrigin(request)) {
+    if (!isPlannerRequest(request)) {
       throw new SyncError(
         "Sync must be requested from the Excela page.",
         403
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
     let current;
 
     try {
-      current = await getSessionUser();
+      current = await getSessionUser(request);
     } catch {
       throw new SyncError(
         "Could not reach the database. Please retry.",

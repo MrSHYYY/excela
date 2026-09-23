@@ -1,5 +1,5 @@
 import { buildInstruction, isPipelineId, parseToday } from "@/ai/pipelines";
-import { getSessionUser, isSameOrigin } from "@/lib/auth";
+import { getSessionUser, isPlannerRequest } from "@/lib/auth";
 import { decrypt } from "@/lib/crypto";
 import { normalizeOllamaKey } from "@/lib/ollama-key";
 import { IMAGE_TYPES, MAX_IMAGE_BYTES, type ImageInput } from "@/lib/image-input";
@@ -16,13 +16,13 @@ function isPlannerEvent(value: unknown): value is PlannerEvent {
 }
 
 export async function POST(request: Request) {
-  if (!isSameOrigin(request)) {
+  if (!isPlannerRequest(request)) {
     return Response.json({ error: "Submit requests from Excela." }, { status: 403 });
   }
   let apiKey: string | null;
   // Only the signed-in user's encrypted key can authorize a model request.
   try {
-    const current = await getSessionUser();
+    const current = await getSessionUser(request);
     if (!current) {
       return Response.json({ error: "Sign in with Google to use Excela.", code: "auth" }, { status: 401 });
     }

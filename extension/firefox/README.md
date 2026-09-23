@@ -1,24 +1,29 @@
 # Excela Firefox extension
 
-No dependencies or extension build step. Use **Connect to** in the popup to choose **Live** (https://excela.cfat.site, the default) or **Local** (https://localhost:3000). The extension remembers your choice. Each site uses its own Firefox login session. Switching sites clears the draft and image; requests never automatically fall back to the other site.
+The popup calls Excela directly. No website or Google Sheets tab needs to stay open. It supports text and Ctrl+V image pasting (one PNG, JPEG or WebP up to 3 MB).
 
-## Load in Firefox
+## Update from the tab-based version
 
-1. For Live, use the deployed website. For Local, have Excela running at https://localhost:3000 and accept its development certificate in Firefox if needed.
-2. Open `about:debugging#/runtime/this-firefox` in Firefox.
-3. Click **Load Temporary Add-on…** and select this folder's **manifest.json**.
-4. Installation opens Excela. Sign in and complete your planner/API setup in Firefox (a Chrome login does not carry over).
-5. Leave the Excela tab open. Open your Google Sheet and click Excela in Firefox's extensions menu. Pin it to the toolbar if desired.
-6. Enter an announcement, choose General or Academic, and click **Inject** or press **Enter**. Shift+Enter inserts a new line.
+1. Deploy the accompanying website changes: `lib/auth.ts`, the AI/sync routes, and the new `/api/extension/session` route. Live mode requires this deployment; reloading only the extension is not enough.
+2. In Firefox, open `about:debugging#/runtime/this-firefox` and reload the add-on. If Firefox cannot apply the manifest version/permission changes, remove it and use **Load Temporary Add-on** to select this folder's `manifest.json` again.
+3. Approve access to cookies for the two Excela sites. Open the popup and choose **Live** (`https://excela.cfat.site`, default) or **Local** (`https://localhost:3000`). For Local, run the existing HTTPS development server and trust its local certificate in Firefox.
+4. Sign in and complete setup through the website once in the same normal Firefox profile. You may then close every Excela/Sheets tab. A Chrome, private-window, or container-specific login is not used by this version.
+5. Type or paste a screenshot and press Enter / Inject. Shift+Enter adds a new line. Signed-out users see a sign-in prompt instead of input fields.
 
-The popup shows connection, progress, success, declined input, and errors. Reopening it during injection shows the ongoing job. You may close the popup while working, but **do not close or reload the dedicated Excela tab during injection**. If interrupted, check your sheet before retrying. Draft text is not saved after the popup closes.
+There is no extension build step. Temporary add-ons are removed when Firefox restarts; load the manifest again until the extension is signed for permanent installation.
 
-## Account and privacy
+## Behavior
 
-The extension uses the website's existing signed-in session through an isolated script in a dedicated Excela tab. It calls the existing status, AI, and sync routes. Your API key stays encrypted in the existing database and is only used by Excela's server. No additional OAuth client, backend, database, or login is needed.
+- First install opens the website for onboarding. Subsequent popup opens create no tabs. Only explicit sign-in/setup or website buttons open a tab.
+- Sign-in is checked through the existing `excela_session` cookie using Firefox's privileged cookies API. It is sent only to the selected Excela origin as a bearer token, never to AI providers or to the popup. The server verifies its hash, expiration, and account on each AI/sync request. Invalid bearer headers never fall back to cookie authentication. Website cookie requests retain their origin checks.
+- The API key stays encrypted in the account database. The extension stores only the selected site preference on disk. Account status is cached in background memory for up to 60 seconds, invalidated by login-cookie changes; injection routes always authenticate on the server.
+- The skeleton appears during an uncached account check. Reopening the popup uses the short cache; job progress polls background memory without repeatedly querying the database.
+- Firefox desktop Manifest V2 provides a persistent background page, allowing injection to continue when the popup or website tabs close. Closing Firefox or reloading/removing the extension interrupts background work; check the sheet before retrying an interrupted write.
+- Events go to the planner selected in setup, never an arbitrary currently open sheet. Live and Local never fall back to one another. Switching clears the draft/image. Drafts and images disappear when the popup closes.
+- Website sessions still expire normally. Sign out on the website to revoke the corresponding session. After changing setup, account labels may take up to a minute to refresh, but the server uses the current saved planner and key.
 
-Events always go into the planner selected in your Excela setup, **not whichever spreadsheet is currently open**. The extension does not read Google Sheets pages. Host permissions cover only https://excela.cfat.site and HTTPS localhost. Firefox match patterns cannot restrict a port, so the code restricts localhost to port 3000. Only the selected origin receives requests. Website origin checks and cookies are unchanged. Extension storage saves only your site preference.
+Only the two listed HTTPS hosts are allowed. Firefox match patterns cannot restrict localhost ports, so the code allows only port 3000. No tab scripting, content scripts, or Sheets-page access is used.
 
-The popup supports text and screenshot pasting with Ctrl+V in the input. Attach one PNG, JPEG, or WebP up to 3 MB; text is optional when an image is attached. Preview, replace, or remove the image before injecting. Attachments stay in memory and are discarded when the popup closes. No announcement history, API keys, or account credentials are saved in extension storage. Firefox removes temporary add-ons when it restarts; load manifest.json again. After code edits, use **Reload** on the add-on's debugging card and reload the dedicated Excela tab when no injection is running.
+## Release status
 
-The live domain is configured. Deploy the current website/API code there before using Live. This is still an unsigned add-on: Mozilla privacy declarations, release validation, and signing are required before public distribution. After updating, reload the add-on and refresh its Excela tab while no injection is running; approve the added site permission if Firefox asks.
+This is an unsigned Firefox desktop add-on. Public distribution still requires Mozilla privacy/data-transmission declarations, validation, and signing. No Chrome compatibility is claimed. Runtime checks and live AI calls require the project owner's approval.

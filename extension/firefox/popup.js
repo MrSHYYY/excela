@@ -6,6 +6,7 @@ const pipeline = document.getElementById("pipeline");
 const sitePicker = document.getElementById("site");
 let site = "https://excela.cfat.site";
 let checking = true;
+let refreshId = 0;
 const send = (message) => browser.runtime.sendMessage({ ...message, site });
 let ready = false;
 let busy = false;
@@ -17,10 +18,11 @@ let readingImage = false;
 const removeImage = document.getElementById("remove-image");
 
 function updateControls() {
-  sitePicker.disabled = busy || readingImage || checking || sending;
+  sitePicker.disabled = busy || readingImage || sending;
+  document.getElementById("loading").hidden = !checking || ready;
   document.getElementById("form").hidden = !ready;
   document.getElementById("keyboard-hint").hidden = !ready;
-  button.disabled = !ready || busy || readingImage;
+  button.disabled = !ready || busy || readingImage || checking;
   field.disabled = !ready || busy;
   field.required = !image;
   pipeline.disabled = busy;
@@ -91,11 +93,14 @@ function renderJob(job) {
 }
 
 async function refresh() {
+  const id = ++refreshId;
   clearTimeout(timer);
   checking = true;
+  document.getElementById("retry").hidden = true;
   updateControls();
   try {
     const result = await send({ type: "status" });
+    if (id !== refreshId) return;
     if (result.error) throw new Error(result.error);
     const session = result.session;
     authenticated = Boolean(session?.authenticated);
@@ -104,21 +109,36 @@ async function refresh() {
     setup.textContent = authenticated ? "Complete setup ↗" : "Sign in to Excela ↗";
     document.getElementById("planner").textContent = ready ? `Connected · ${session.sheet.title}` : authenticated ? "Complete your Excela setup to continue." : "Sign in to Excela to continue.";
     renderJob(authenticated ? result.job : null);
-    if (busy) timer = setTimeout(refresh, 1800);
+    if (busy) timer = setTimeout(pollJob, 1000);
   } catch (error) {
+    if (id !== refreshId) return;
     ready = false;
     renderJob({ failed: true, message: error.message });
     setup.hidden = false;
     document.getElementById("planner").textContent = "Could not connect";
+    document.getElementById("retry").hidden = false;
   } finally {
-    checking = false;
-    updateControls();
+    if (id === refreshId) { checking = false; updateControls(); }
   }
 }
 
+// Poll memory in the background, not the database, while a job is running.
+async function pollJob() {
+  try {
+    const result = await send({ type: "job" });
+    if (result.error) throw new Error(result.error);
+    renderJob(result.job);
+    if (busy) timer = setTimeout(pollJob, 1000);
+  } catch (error) {
+    renderJob({ failed: true, message: error.message });
+    document.getElementById("retry").hidden = false;
+  }
+}
+document.getElementById("retry").addEventListener("click", refresh);
+
 document.getElementById("form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!ready || busy || sending || readingImage || (!field.value.trim() && !image)) return;
+  if (!ready || busy || sending || readingImage || checking || (!field.value.trim() && !image)) return;
   sending = true;
   clearTimeout(timer);
   renderJob({ busy: true, message: "Starting…" });
@@ -126,7 +146,7 @@ document.getElementById("form").addEventListener("submit", async (event) => {
     const result = await send({ type: "inject", text: field.value.trim(), pipeline: pipeline.value, ...(image ? { image } : {}) });
     if (result.error) throw new Error(result.error);
     renderJob(result.job);
-    timer = setTimeout(refresh, 1000);
+    timer = setTimeout(pollJob, 1000);
   } catch (error) { renderJob({ failed: true, message: error.message }); }
   finally { sending = false; updateControls(); }
 });
@@ -139,6 +159,8 @@ field.addEventListener("keydown", (event) => {
 setup.addEventListener("click", () => send({ type: "open", setup: authenticated }));
 document.getElementById("website").addEventListener("click", () => send({ type: "open" }));
 sitePicker.addEventListener("change", async () => {
+  ++refreshId;
+  clearTimeout(timer);
   site = sitePicker.value;
   ready = false;
   authenticated = false;
