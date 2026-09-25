@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Excela — Quick Inject",
+  "version": "0.3.0",
+  "description": "Send announcements to your connected Excela planner from a compact popup.",
+  "permissions": ["cookies", "storage"],
+  "host_permissions": ["https://excela.cfat.site/*", "https://localhost/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Excela", "default_popup": "popup.html", "default_icon": { "48": "logo.png" } },
+  "icons": { "48": "logo.png", "96": "logo.png" }
+}
