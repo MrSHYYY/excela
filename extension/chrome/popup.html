@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Excela</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <header><img src="logo.png" width="30" height="30" alt=""><strong>excela<span>.</span></strong><button id="website" type="button" aria-label="Open Excela website">↗</button></header>
+  <p id="planner">Connecting to Excela…</p>
+  <div class="environment"><label for="site">Connect to</label><select id="site" disabled><option value="https://excela.cfat.site">Live · excela.cfat.site</option><option value="https://localhost:3000">Local · localhost:3000</option></select></div>
+  <div id="loading" aria-label="Checking your account" role="status"><span></span><span></span></div>
+  <form id="form" hidden>
+    <label for="message">What’s coming up?</label>
+    <div id="attachment" hidden><img id="preview" alt="Attached announcement"><span id="filename"></span><button id="remove-image" type="button">Remove</button></div>
+    <textarea id="message" rows="5" maxlength="20000" placeholder="Quiz 4 on Sept 27…" required disabled></textarea>
+    <div class="actions"><select id="pipeline" aria-label="Announcement type"><option value="general">General</option><option value="academic">Academic</option></select><button id="inject" type="submit" disabled>Inject ↗</button></div>
+  </form>
+  <button id="setup" type="button" hidden>Sign in / Complete setup ↗</button>
+  <p id="status" role="status" aria-live="polite"></p>
+  <button id="retry" type="button" hidden>Try again</button>
+  <footer id="keyboard-hint" hidden>Enter to inject · Shift+Enter for a new line</footer>
+  <script src="popup.js"></script>
+</body>
+</html>
