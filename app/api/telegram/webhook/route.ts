@@ -1,6 +1,10 @@
 import type { TelegramUpdate } from "@/lib/telegram/types";
 import { sendTelegramChatAction, sendTelegramReply } from "@/lib/telegram/client";
-import { findUserByTelegramId, verifyAndConsumeLinkingCode } from "@/lib/telegram/linking";
+import {
+  disconnectTelegram,
+  findUserByTelegramId,
+  verifyAndConsumeLinkingCode,
+} from "@/lib/telegram/linking";
 import {
   appendTelegramConversation,
   clearTelegramConversation,
@@ -31,7 +35,9 @@ You can chat with me naturally to manage your Google Sheets planner.
 • "Mark that quiz complete"
 
 💬 Commands:
+• /start [code] — Link your account or view status
 • /clear — Reset conversation context
+• /disconnect — Disconnect Telegram from your Excela account
 • /help — Show this help message`;
 
 export async function POST(request: Request) {
@@ -121,6 +127,25 @@ export async function POST(request: Request) {
     // Command: /help
     if (text === "/help" || text.startsWith("/help@")) {
       await sendTelegramReply(chatId, HELP_MESSAGE);
+      return Response.json({ ok: true });
+    }
+
+    // Command: /disconnect
+    if (text === "/disconnect" || text.startsWith("/disconnect@")) {
+      const user = await findUserByTelegramId(sender.id);
+      if (!user) {
+        await sendTelegramReply(
+          chatId,
+          "Your Telegram account is not connected to Excela.",
+        );
+        return Response.json({ ok: true });
+      }
+
+      await disconnectTelegram(user._id);
+      await sendTelegramReply(
+        chatId,
+        "👋 Your Telegram account has been disconnected from Excela.\n\nYou can reconnect anytime from the Excela web settings.",
+      );
       return Response.json({ ok: true });
     }
 

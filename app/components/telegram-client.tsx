@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -42,23 +42,18 @@ export default function TelegramClient({ initialSession }: { initialSession: Sig
   const [copied, setCopied] = useState(false);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
 
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Poll for connection status when linking is in progress
+  // Poll for connection status ONLY while a linking code is actively on screen
   useEffect(() => {
-    if (!linkingState || telegram.connected) {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
-      return;
-    }
+    if (!linkingState || telegram.connected) return;
 
+    let active = true;
     const checkStatus = async () => {
       try {
         const res = await fetch("/api/telegram/status", { cache: "no-store" });
-        if (!res.ok) return;
+        if (!res.ok || !active) return;
         const data: TelegramStatus = await res.json();
+        if (!active) return;
+
         if (data.connected) {
           setTelegram(data);
           setLinkingState(null);
@@ -66,17 +61,15 @@ export default function TelegramClient({ initialSession }: { initialSession: Sig
           setError("");
         }
       } catch {
-        // Best-effort polling
+        // Best-effort check
       }
     };
 
-    pollIntervalRef.current = setInterval(checkStatus, 3000);
+    const timer = setInterval(checkStatus, 3000);
 
     return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
+      active = false;
+      clearInterval(timer);
     };
   }, [linkingState, telegram.connected]);
 
