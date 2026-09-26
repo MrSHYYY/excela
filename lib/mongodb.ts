@@ -1,5 +1,11 @@
 import { MongoClient, type Db } from "mongodb";
-import type { SessionDoc, TelegramLinkingTokenDoc, UserDoc } from "@/lib/models";
+import type {
+  SessionDoc,
+  TelegramConversationDoc,
+  TelegramLinkingTokenDoc,
+  TelegramProcessedUpdateDoc,
+  UserDoc,
+} from "@/lib/models";
 import type { PendingConfirmation } from "@/lib/agent/confirmations";
 
 // Cache the connection on globalThis so dev-server reloads and serverless
@@ -25,6 +31,8 @@ export function getDb(): Promise<Db> {
         db.collection<SessionDoc>("sessions").createIndex({ userId: 1 }),
         db.collection<PendingConfirmation>("pending_confirmations").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
         db.collection<TelegramLinkingTokenDoc>("telegram_linking_tokens").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+        db.collection<TelegramConversationDoc>("telegram_conversations").createIndex({ updatedAt: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 }),
+        db.collection<TelegramProcessedUpdateDoc>("telegram_processed_updates").createIndex({ createdAt: 1 }, { expireAfterSeconds: 3600 }),
       ]).catch((error) => {
         console.error("Creating MongoDB indexes failed:", error instanceof Error ? error.message : error);
       });
@@ -54,4 +62,13 @@ export async function sessionsCollection() {
 export async function telegramTokensCollection() {
   return (await getDb()).collection<TelegramLinkingTokenDoc>("telegram_linking_tokens");
 }
+
+export async function telegramConversationsCollection() {
+  return (await getDb()).collection<TelegramConversationDoc>("telegram_conversations");
+}
+
+export async function telegramProcessedUpdatesCollection() {
+  return (await getDb()).collection<TelegramProcessedUpdateDoc>("telegram_processed_updates");
+}
+
 

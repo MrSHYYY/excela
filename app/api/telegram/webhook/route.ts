@@ -1,8 +1,38 @@
 import type { TelegramUpdate } from "@/lib/telegram/types";
-import { sendTelegramMessage } from "@/lib/telegram/client";
+import { sendTelegramChatAction, sendTelegramReply } from "@/lib/telegram/client";
 import { findUserByTelegramId, verifyAndConsumeLinkingCode } from "@/lib/telegram/linking";
+import {
+  appendTelegramConversation,
+  clearTelegramConversation,
+  getTelegramConversation,
+  isUpdateAlreadyProcessed,
+} from "@/lib/telegram/conversation";
+import { decrypt } from "@/lib/crypto";
+import { normalizeOllamaKey } from "@/lib/ollama-key";
+import { AgentError, runSmartAgent } from "@/lib/agent/agent";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
+
+const HELP_MESSAGE = `Excela Planner Assistant 📅
+
+You can chat with me naturally to manage your Google Sheets planner.
+
+📅 Checking your schedule:
+• "What do I have today?"
+• "What's on my schedule tomorrow?"
+• "What does my week look like?"
+• "Do I have any unfinished deadlines?"
+
+✏️ Managing events:
+• "Add CSE321 Quiz next Monday at 2 PM"
+• "Move my quiz to Friday"
+• "And make it 4 PM"
+• "Mark that quiz complete"
+
+💬 Commands:
+• /clear — Reset conversation context
+• /help — Show this help message`;
 
 export async function POST(request: Request) {
   try {
@@ -11,6 +41,14 @@ export async function POST(request: Request) {
       update = (await request.json()) as TelegramUpdate;
     } catch {
       return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    }
+
+    // Webhook idempotency: skip if already processed
+    if (typeof update.update_id === "number") {
+      const alreadyProcessed = await isUpdateAlreadyProcessed(update.update_id);
+      if (alreadyProcessed) {
+        return Response.json({ ok: true });
+      }
     }
 
     const message = update.message || update.edited_message;
@@ -22,6 +60,7 @@ export async function POST(request: Request) {
     const sender = message.from;
     const text = message.text.trim();
 
+    // Command: /start [CODE]
     if (text.startsWith("/start")) {
       const parts = text.split(/\s+/);
       const code = parts[1]?.trim();
@@ -30,17 +69,17 @@ export async function POST(request: Request) {
         const result = await verifyAndConsumeLinkingCode(code, sender, chatId);
 
         if (result.success) {
-          await sendTelegramMessage(
+          await sendTelegramReply(
             chatId,
-            "✅ Your Telegram account is now connected to Excela!\n\nSmart planner messaging will be available here soon.",
+            "✅ Your Telegram account is now connected to Excela!\n\nYou can now ask me to check your schedule or add, move, and update events on your planner.\n\nType /help to see examples.",
           );
         } else if (result.reason === "already_linked") {
-          await sendTelegramMessage(
+          await sendTelegramReply(
             chatId,
             "⚠️ This Telegram account is already connected to an Excela account.\n\nTo link a different account, disconnect it from your Excela web settings first.",
           );
         } else {
-          await sendTelegramMessage(
+          await sendTelegramReply(
             chatId,
             "⚠️ This linking code is invalid or has expired.\n\nPlease generate a fresh linking code from your Excela web settings.",
           );
@@ -48,14 +87,14 @@ export async function POST(request: Request) {
       } else {
         const existing = await findUserByTelegramId(sender.id);
         if (existing) {
-          await sendTelegramMessage(
+          await sendTelegramReply(
             chatId,
-            "You're connected to Excela. Smart planner messaging will be available here soon.",
+            "You're connected to Excela! 📅\n\nAsk me anything about your planner, or type /help for examples.",
           );
         } else {
-          await sendTelegramMessage(
+          await sendTelegramReply(
             chatId,
-            "Welcome to Excela!\n\nTo connect your Telegram account to your Excela planner, generate a linking code from the Telegram settings page in the Excela web app.",
+            "Welcome to Excela! 👋\n\nTo connect your Telegram account to your Excela planner, generate a linking code from the Telegram settings page in the Excela web app.",
           );
         }
       }
@@ -63,24 +102,84 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
 
-    // Default handling for other messages in this phase (infrastructure only, no Smart AI yet)
-    const existing = await findUserByTelegramId(sender.id);
-    if (existing) {
-      await sendTelegramMessage(
-        chatId,
-        "You're connected to Excela. Smart planner messaging will be available here soon.",
-      );
-    } else {
-      await sendTelegramMessage(
+    // Command: /clear
+    if (text === "/clear" || text.startsWith("/clear@")) {
+      const user = await findUserByTelegramId(sender.id);
+      if (!user) {
+        await sendTelegramReply(
+          chatId,
+          "Your Telegram account is not connected to Excela.\n\nPlease connect it from the Excela web settings first.",
+        );
+        return Response.json({ ok: true });
+      }
+
+      await clearTelegramConversation(chatId);
+      await sendTelegramReply(chatId, "Conversation cleared. What would you like to plan?");
+      return Response.json({ ok: true });
+    }
+
+    // Command: /help
+    if (text === "/help" || text.startsWith("/help@")) {
+      await sendTelegramReply(chatId, HELP_MESSAGE);
+      return Response.json({ ok: true });
+    }
+
+    // Normal messages -> Smart Planner Agent
+    const user = await findUserByTelegramId(sender.id);
+    if (!user) {
+      await sendTelegramReply(
         chatId,
         "Your Telegram account is not connected to Excela.\n\nPlease connect it from the Excela web settings first.",
       );
+      return Response.json({ ok: true });
+    }
+
+    // Check Ollama API key
+    const rawApiKey = user.ollamaApiKey ? decrypt(user.ollamaApiKey) : null;
+    const apiKey = rawApiKey ? normalizeOllamaKey(rawApiKey) : null;
+    if (!apiKey) {
+      await sendTelegramReply(
+        chatId,
+        "⚠️ Please configure your Ollama API key in Excela web setup before chatting with the planner.",
+      );
+      return Response.json({ ok: true });
+    }
+
+    // Check Google Sheets planner
+    if (!user.sheetId) {
+      await sendTelegramReply(
+        chatId,
+        "⚠️ Please connect a Google Sheets planner in Excela web setup before chatting with the planner.",
+      );
+      return Response.json({ ok: true });
+    }
+
+    // Show typing status indicator in Telegram
+    void sendTelegramChatAction(chatId, "typing");
+
+    const today = new Date().toISOString().slice(0, 10);
+    const history = await getTelegramConversation(chatId);
+
+    try {
+      const { reply } = await runSmartAgent(apiKey, user, today, text, history);
+
+      // Persist turn in MongoDB conversation history
+      await appendTelegramConversation(chatId, user._id, text, reply);
+
+      // Send response to Telegram (auto-chunked if long)
+      await sendTelegramReply(chatId, reply);
+    } catch (error) {
+      console.error("Smart Agent Telegram error:", error);
+      const userMsg =
+        error instanceof AgentError
+          ? error.message
+          : "⚠️ I encountered an error while processing your request. Please try again in a moment.";
+      await sendTelegramReply(chatId, userMsg);
     }
 
     return Response.json({ ok: true });
   } catch (error) {
-    console.error("Telegram webhook error:", error);
-    // Always return 200 to prevent Telegram from continually retrying on unhandled exceptions
+    console.error("Telegram webhook unexpected error:", error);
     return Response.json({ ok: true });
   }
 }

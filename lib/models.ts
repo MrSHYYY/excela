@@ -47,6 +47,26 @@ export type TelegramLinkingTokenDoc = {
   expiresAt: Date;
 };
 
+/** Collection `telegram_conversations`. Holds bounded multi-turn conversation context. */
+export type TelegramConversationDoc = {
+  /** The Telegram chatId */
+  _id: number;
+  userId: ObjectId;
+  messages: Array<{
+    role: "user" | "assistant";
+    content: string;
+    timestamp: Date;
+  }>;
+  updatedAt: Date;
+};
+
+/** Collection `telegram_processed_updates`. For webhook idempotency. */
+export type TelegramProcessedUpdateDoc = {
+  /** The Telegram update_id */
+  _id: number;
+  createdAt: Date;
+};
+
 /** Collection `sessions`. Expired documents are removed by a MongoDB TTL index. */
 export type SessionDoc = {
   /** SHA-256 of the random session token kept in the browser cookie. */

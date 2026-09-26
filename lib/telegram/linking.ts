@@ -1,6 +1,10 @@
 import { randomBytes } from "node:crypto";
 import type { ObjectId } from "mongodb";
-import { telegramTokensCollection, usersCollection } from "@/lib/mongodb";
+import {
+  telegramConversationsCollection,
+  telegramTokensCollection,
+  usersCollection,
+} from "@/lib/mongodb";
 import type { UserDoc } from "@/lib/models";
 
 const TOKEN_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
@@ -103,6 +107,7 @@ export async function verifyAndConsumeLinkingCode(
 export async function disconnectTelegram(userId: ObjectId): Promise<boolean> {
   const users = await usersCollection();
   const tokens = await telegramTokensCollection();
+  const conversations = await telegramConversationsCollection();
 
   await Promise.all([
     users.updateOne(
@@ -110,6 +115,7 @@ export async function disconnectTelegram(userId: ObjectId): Promise<boolean> {
       { $unset: { telegram: "" }, $set: { updatedAt: new Date() } },
     ),
     tokens.deleteMany({ userId }),
+    conversations.deleteMany({ userId }),
   ]);
 
   return true;
