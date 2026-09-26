@@ -30,9 +30,6 @@ type GridSheet = {
 };
 type SheetMeta = { properties: { title: string; sheetId: number } };
 
-function isWhite(color: Color | undefined): boolean {
-  return Boolean(color && (color.red ?? 0) >= 0.999 && (color.green ?? 0) >= 0.999 && (color.blue ?? 0) >= 0.999);
-}
 function isPendingRed(color: Color | undefined): boolean {
   if (!color) return false;
   const { red = 0, green = 0, blue = 0 } = color;
@@ -45,22 +42,17 @@ function isCompletedBlue(color: Color | undefined): boolean {
 const isBlank = (text: string) => !text.replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "");
 
 /**
- * A slot is empty ONLY if it has no visible text AND no background color.
- * Plain unformatted cells have no background color (or white).
- * Cells with reset formatting (white foreground on white/no bg) are also considered having no visible text.
+ * A slot is empty when it has no displayed text.
+ *
+ * The planner template uses gray/blue fills for alternating day rows, including
+ * completely blank event cells. Background color therefore cannot indicate
+ * occupancy: doing so makes a visually empty day look like it has four events.
+ * Formatting is still used below to classify non-empty events as pending,
+ * completed, or other.
  */
 export function isSlotEmpty(cell: GridCell | undefined): boolean {
   if (!cell) return true;
-  const text = cell.formattedValue ?? "";
-  const format = cell.effectiveFormat;
-  const bg = format?.backgroundColor;
-  const fg = format?.textFormat?.foregroundColor;
-
-  const hasNoBg = !bg || isWhite(bg);
-  const isResetFill = isWhite(fg) && hasNoBg;
-  const hasNoText = isBlank(text) || isResetFill;
-
-  return hasNoText && hasNoBg;
+  return isBlank(cell.formattedValue ?? "");
 }
 
 /** A real YYYY-MM-DD used everywhere in the planner service; tools must resolve dates before calling in. */
