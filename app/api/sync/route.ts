@@ -359,10 +359,13 @@ export async function POST(request: Request) {
       // Fill E → F → G → H using what the user sees. Hidden raw values and
       // empty-result formulas must not push an event past a visually empty slot.
       // Only event cells are eligible; date cells are never overwritten.
-      const slot = slots.find(
-        (index) =>
-          String(row[index] ?? "").replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "") === ""
-      );
+      const slot = slots.find((index) => {
+        const text = String(row[index] ?? "").replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "");
+        const cell = cells.get(`${target.sheetId}:${rowIndex + 2}:${index + 3}`);
+        const bg = cell?.effectiveFormat?.backgroundColor;
+        const hasNoBg = !bg || isWhite(bg);
+        return text === "" && hasNoBg;
+      });
 
       if (slot === undefined) {
         throw new SyncError(

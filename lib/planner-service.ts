@@ -44,6 +44,25 @@ function isCompletedBlue(color: Color | undefined): boolean {
 }
 const isBlank = (text: string) => !text.replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "");
 
+/**
+ * A slot is empty ONLY if it has no visible text AND no background color.
+ * Plain unformatted cells have no background color (or white).
+ * Cells with reset formatting (white foreground on white/no bg) are also considered having no visible text.
+ */
+export function isSlotEmpty(cell: GridCell | undefined): boolean {
+  if (!cell) return true;
+  const text = cell.formattedValue ?? "";
+  const format = cell.effectiveFormat;
+  const bg = format?.backgroundColor;
+  const fg = format?.textFormat?.foregroundColor;
+
+  const hasNoBg = !bg || isWhite(bg);
+  const isResetFill = isWhite(fg) && hasNoBg;
+  const hasNoText = isBlank(text) || isResetFill;
+
+  return hasNoText && hasNoBg;
+}
+
 /** A real YYYY-MM-DD used everywhere in the planner service; tools must resolve dates before calling in. */
 export function assertDate(date: unknown): string {
   if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -139,10 +158,8 @@ async function readTabGrids(token: string, spreadsheetId: string, tabs: { title:
 }
 
 function slotStatus(cell: GridCell | undefined): DaySlot["status"] {
-  const text = cell?.formattedValue ?? "";
+  if (isSlotEmpty(cell)) return "empty";
   const format = cell?.effectiveFormat;
-  const resetFill = isWhite(format?.textFormat?.foregroundColor) && (!format?.backgroundColor || isWhite(format.backgroundColor));
-  if (resetFill || isBlank(text)) return "empty";
   if (isPendingRed(format?.backgroundColor)) return "pending";
   if (isCompletedBlue(format?.backgroundColor)) return "completed";
   return "other";
@@ -224,11 +241,15 @@ export async function createEvent(user: UserDoc, input: { course: string; title:
   if (!row) throw new PlannerError(`Cannot locate day ${target.getUTCDate()} in ${tab.title}.`, "day_not_found");
 
   const label = [course, title].filter(Boolean).join(" ").replace(/\s+/g, " ").toUpperCase();
-  const existing = SLOT_COLUMNS.map((_, index) => String(row.columns[index + 1]?.formattedValue ?? "").trim());
-  if (existing.some((text) => text.toLowerCase() === label.toLowerCase())) {
+  const activeEvents = SLOT_COLUMNS.map((_, index) => {
+    const cell = row.columns[index + 1];
+    if (isSlotEmpty(cell)) return "";
+    return String(cell?.formattedValue ?? "").trim();
+  });
+  if (activeEvents.some((text) => text && text.toLowerCase() === label.toLowerCase())) {
     return { status: "duplicate", date, label };
   }
-  const slotIndex = existing.findIndex((_, index) => isBlank(String(row.columns[index + 1]?.formattedValue ?? "")));
+  const slotIndex = [0, 1, 2, 3].findIndex((index) => isSlotEmpty(row.columns[index + 1]));
   if (slotIndex === -1) throw new PlannerError(`All four event slots on ${date} are occupied.`, "day_full");
 
   await googleFetch(token, spreadsheetId, ":batchUpdate", {
@@ -377,8 +398,7 @@ export async function markEventIncomplete(user: UserDoc, input: { cell: string; 
   return { status: 'marked_incomplete', cell: input.cell, sheetId: input.sheetId };
 }
 
-export async function deleteEvent(user: UserDoc, input: { cell: string; sheetId: number; confirmationToken: string }) {
-  if (!input.confirmationToken) throw new PlannerError("A confirmation token is required for deletion.", "needs_confirmation");
+export async function deleteEvent(user: UserDoc, input: { cell: string; sheetId: number; confirmationToken?: string }) {
   const { token, spreadsheetId } = await resolvePlanner(user);
   const range = cellToRange(input.sheetId, input.cell);
   

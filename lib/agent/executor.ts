@@ -11,7 +11,7 @@ import { updateEventTool, runUpdateEvent } from "@/lib/agent/tools/updateEvent";
 import { moveEventTool, runMoveEvent } from "@/lib/agent/tools/moveEvent";
 import { markCompleteTool, runMarkComplete } from "@/lib/agent/tools/markComplete";
 import { markIncompleteTool, runMarkIncomplete } from "@/lib/agent/tools/markIncomplete";
-import { requestDeleteConfirmationTool, runRequestDeleteConfirmation } from "@/lib/agent/tools/requestDeleteConfirmation";
+import { runRequestDeleteConfirmation } from "@/lib/agent/tools/requestDeleteConfirmation";
 import { deleteEventTool, runDeleteEvent } from "@/lib/agent/tools/deleteEvent";
 
 // The full set of tools the model may call. Registering a tool here is the ONLY way it becomes
@@ -31,8 +31,6 @@ export const agentTools = [
   moveEventTool,
   markCompleteTool,
   markIncompleteTool,
-  // Confirmation + destructive tools
-  requestDeleteConfirmationTool,
   deleteEventTool,
 ];
 
