@@ -1,4 +1,5 @@
 import type { TelegramUpdate } from "@/lib/telegram/types";
+import { googleAccessToken } from "@/ai/google-auth";
 import { sendTelegramChatAction, sendTelegramReply } from "@/lib/telegram/client";
 import {
   disconnectTelegram,
@@ -13,6 +14,7 @@ import {
 } from "@/lib/telegram/conversation";
 import { decrypt } from "@/lib/crypto";
 import { normalizeOllamaKey } from "@/lib/ollama-key";
+import { canonicalSheetUrl, tabMonthYear } from "@/lib/sheet";
 import { AgentError, runSmartAgent } from "@/lib/agent/agent";
 
 export const runtime = "nodejs";
@@ -36,6 +38,7 @@ You can chat with me naturally to manage your Google Sheets planner.
 
 💬 Commands:
 • /start [code] — Link your account or view status
+• /view — Open your connected Google Sheets planner
 • /clear — Reset conversation context
 • /disconnect — Disconnect Telegram from your Excela account
 • /help — Show this help message`;
@@ -105,6 +108,58 @@ export async function POST(request: Request) {
         }
       }
 
+      return Response.json({ ok: true });
+    }
+
+    // Command: /view
+    if (text === "/view" || text.startsWith("/view@")) {
+      const user = await findUserByTelegramId(sender.id);
+      if (!user) {
+        await sendTelegramReply(
+          chatId,
+          "Your Telegram account is not connected to Excela.\n\nPlease connect it from the Excela web settings first.",
+        );
+        return Response.json({ ok: true });
+      }
+
+      if (!user.sheetId) {
+        await sendTelegramReply(
+          chatId,
+          "You do not have a connected planner yet. Please connect a Google Sheets planner in Excela setup first.",
+        );
+        return Response.json({ ok: true });
+      }
+
+      const plainSheetUrl = user.sheetUrl || canonicalSheetUrl(user.sheetId);
+      let sheetUrl = plainSheetUrl;
+
+      // Match the dashboard navbar by opening the current month tab directly.
+      try {
+        const token = await googleAccessToken(user);
+        const result = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${user.sheetId}?fields=sheets(properties(sheetId,title))`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+            signal: AbortSignal.timeout(15_000),
+          },
+        );
+        if (result.ok) {
+          const data = (await result.json()) as { sheets?: { properties: { sheetId: number; title: string } }[] };
+          const now = new Date();
+          const month = now.getUTCMonth() + 1;
+          const year = now.getUTCFullYear();
+          const tab = (data.sheets ?? []).find(({ properties }) => {
+            const parsed = tabMonthYear(properties.title);
+            return parsed?.month === month && parsed.year === year;
+          });
+          if (tab) sheetUrl = `${canonicalSheetUrl(user.sheetId)}#gid=${tab.properties.sheetId}`;
+        }
+      } catch {
+        // The root planner link remains useful if current-tab lookup fails.
+      }
+
+      await sendTelegramReply(chatId, `📊 Open your Excela planner:\n${sheetUrl}`);
       return Response.json({ ok: true });
     }
 
