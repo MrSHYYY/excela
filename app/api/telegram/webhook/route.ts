@@ -242,7 +242,7 @@ export async function POST(request: Request) {
     }
 
     // Command: /auto
-    if (text === "/auto" || text.startsWith("/auto ") || text.startsWith("/auto@")) {
+    if (/^\/auto(?:@\S+)?(?:\s+.*)?$/i.test(text)) {
       const user = await findUserByTelegramId(sender.id);
       if (!user) {
         await sendTelegramReply(

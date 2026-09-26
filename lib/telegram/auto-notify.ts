@@ -9,20 +9,21 @@ export const DEFAULT_TIMEZONE = process.env.APP_TIMEZONE || "Asia/Dhaka";
 /**
  * Parses user input into a normalized 24-hour "HH:mm" string.
  * Supports:
- * - "6pm", "6:30pm", "6:30 pm", "6 pm", "6am", "6:30am"
- * - "18:30", "09:00", "9:00", "9:30"
- * - "12am", "12pm", "12:00am", "12:00pm"
+ * - "6pm", "6:30pm", "6.30pm", "6:30 pm", "6.30 pm", "6 pm", "6am", "6:30am", "6.30am"
+ * - "6:45", "6.45", "18:30", "18.30", "09:00", "09.00", "9:00", "9.00", "9:30", "9.30"
+ * - "12am", "12pm", "12:00am", "12.00am", "12:00pm", "12.00pm"
  * Returns null if invalid.
  */
 export function parseTimeInput(raw: string): string | null {
   if (!raw || typeof raw !== "string") return null;
   const trimmed = raw.trim().toLowerCase();
-  const match = trimmed.match(/^(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?$/i);
+  const match = trimmed.match(/^(\d{1,2})(?:[:.](\d{1,2}))?\s*(am|pm|a\.m\.|p\.m\.)?$/i);
   if (!match) return null;
 
   let hours = parseInt(match[1], 10);
   const minutes = match[2] !== undefined ? parseInt(match[2], 10) : 0;
-  const meridiem = match[3]?.toLowerCase();
+  const rawMeridiem = match[3]?.toLowerCase().replace(/\./g, "");
+  const meridiem = rawMeridiem === "am" || rawMeridiem === "pm" ? rawMeridiem : undefined;
 
   if (Number.isNaN(hours) || Number.isNaN(minutes) || minutes < 0 || minutes > 59) {
     return null;
