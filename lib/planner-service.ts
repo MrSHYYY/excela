@@ -254,3 +254,161 @@ export async function createEvent(user: UserDoc, input: { course: string; title:
   const link = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${tab.sheetId}&range=A${Math.max(1, row.rowIndex + 1 - 12)}`;
   return { status: "created", date, label, cell, link };
 }
+
+const PENDING_FORMAT = { backgroundColorStyle: { rgbColor: { red: 153/255, green: 27/255, blue: 27/255 } }, textFormat: { foregroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } } } };
+const COMPLETED_FORMAT = { backgroundColorStyle: { rgbColor: { red: 30/255, green: 58/255, blue: 138/255 } }, textFormat: { foregroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } } } };
+const CLEAR_FORMAT = { backgroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } }, textFormat: { foregroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } } } };
+
+export type EventMatch = { date: string; sheet: string; sheetId: number; rowIndex: number; text: string; status: DaySlot['status']; cell: string; column: string };
+
+export async function findEventsDetailed(user: UserDoc, query: string, from: string, to: string): Promise<EventMatch[]> {
+  const needle = query.trim().toLowerCase();
+  if (!needle) throw new PlannerError('Provide text to search for.', 'invalid_query');
+  const days = await getSchedule(user, from, to);
+  return days.flatMap((day) =>
+    day.slots
+      .filter((slot) => slot.text.toLowerCase().includes(needle))
+      .map((slot) => ({
+        date: day.date, sheet: day.sheet, sheetId: day.sheetId, rowIndex: day.rowIndex,
+        text: slot.text, status: slot.status, cell: `${slot.column}${day.rowIndex + 1}`, column: slot.column,
+      })),
+  );
+}
+
+function parseCellRef(cell: string): { column: string; rowIndex: number } {
+  const match = cell.trim().toUpperCase().match(/^([EFGH])(\d+)$/);
+  if (!match) throw new PlannerError(`Invalid cell reference: ${cell}. Must be in columns E, F, G, or H.`, "invalid_cell");
+  return { column: match[1], rowIndex: parseInt(match[2], 10) - 1 };
+}
+
+function cellToRange(sheetId: number, cell: string) {
+  const { column, rowIndex } = parseCellRef(cell);
+  const colIndex = SLOT_COLUMNS.indexOf(column as (typeof SLOT_COLUMNS)[number]) + 4; // E is 4
+  return { sheetId, startRowIndex: rowIndex, endRowIndex: rowIndex + 1, startColumnIndex: colIndex, endColumnIndex: colIndex + 1 };
+}
+
+export async function updateEvent(user: UserDoc, input: { cell: string; sheetId: number; newCourse: string; newTitle: string }) {
+  const { token, spreadsheetId } = await resolvePlanner(user);
+  const range = cellToRange(input.sheetId, input.cell);
+  const label = [input.newCourse, input.newTitle].filter(Boolean).join(' ').replace(/\s+/g, ' ').toUpperCase();
+  
+  await googleFetch(token, spreadsheetId, ":batchUpdate", {
+    method: "POST",
+    body: JSON.stringify({
+      requests: [{
+        repeatCell: {
+          range,
+          cell: {
+            userEnteredValue: { stringValue: label },
+            userEnteredFormat: PENDING_FORMAT,
+          },
+          fields: "userEnteredValue,userEnteredFormat.backgroundColorStyle,userEnteredFormat.textFormat.foregroundColorStyle",
+        },
+      }],
+    }),
+  });
+  return { status: 'updated', cell: input.cell, label };
+}
+
+export async function moveEvent(user: UserDoc, input: { cell: string; sourceSheetId: number; sourceRowIndex: number; sourceDate: string; text: string; targetDate: string }) {
+  const { token, spreadsheetId } = await resolvePlanner(user);
+  
+  const sourceRange = cellToRange(input.sourceSheetId, input.cell);
+  await googleFetch(token, spreadsheetId, ":batchUpdate", {
+    method: "POST",
+    body: JSON.stringify({
+      requests: [{
+        repeatCell: {
+          range: sourceRange,
+          cell: {
+            userEnteredValue: { stringValue: '' },
+            userEnteredFormat: CLEAR_FORMAT,
+          },
+          fields: "userEnteredValue,userEnteredFormat.backgroundColorStyle,userEnteredFormat.textFormat.foregroundColorStyle",
+        },
+      }],
+    }),
+  });
+
+  const createRes = await createEvent(user, { course: "", title: input.text, date: input.targetDate });
+  
+  return { status: 'moved', from: { cell: input.cell, date: input.sourceDate }, to: { cell: createRes.cell, date: input.targetDate }, label: createRes.label };
+}
+
+export async function markEventComplete(user: UserDoc, input: { cell: string; sheetId: number }) {
+  const { token, spreadsheetId } = await resolvePlanner(user);
+  const range = cellToRange(input.sheetId, input.cell);
+  
+  await googleFetch(token, spreadsheetId, ":batchUpdate", {
+    method: "POST",
+    body: JSON.stringify({
+      requests: [{
+        repeatCell: {
+          range,
+          cell: {
+            userEnteredFormat: COMPLETED_FORMAT,
+          },
+          fields: "userEnteredFormat.backgroundColorStyle,userEnteredFormat.textFormat.foregroundColorStyle",
+        },
+      }],
+    }),
+  });
+  return { status: 'completed', cell: input.cell };
+}
+
+export async function markEventIncomplete(user: UserDoc, input: { cell: string; sheetId: number }) {
+  const { token, spreadsheetId } = await resolvePlanner(user);
+  const range = cellToRange(input.sheetId, input.cell);
+  
+  await googleFetch(token, spreadsheetId, ":batchUpdate", {
+    method: "POST",
+    body: JSON.stringify({
+      requests: [{
+        repeatCell: {
+          range,
+          cell: {
+            userEnteredFormat: PENDING_FORMAT,
+          },
+          fields: "userEnteredFormat.backgroundColorStyle,userEnteredFormat.textFormat.foregroundColorStyle",
+        },
+      }],
+    }),
+  });
+  return { status: 'marked_incomplete', cell: input.cell };
+}
+
+export async function deleteEvent(user: UserDoc, input: { cell: string; sheetId: number; confirmationToken: string }) {
+  if (!input.confirmationToken) throw new PlannerError("A confirmation token is required for deletion.", "needs_confirmation");
+  const { token, spreadsheetId } = await resolvePlanner(user);
+  const range = cellToRange(input.sheetId, input.cell);
+  
+  await googleFetch(token, spreadsheetId, ":batchUpdate", {
+    method: "POST",
+    body: JSON.stringify({
+      requests: [{
+        repeatCell: {
+          range,
+          cell: {
+            userEnteredValue: { stringValue: '' },
+            userEnteredFormat: CLEAR_FORMAT,
+          },
+          fields: "userEnteredValue,userEnteredFormat.backgroundColorStyle,userEnteredFormat.textFormat.foregroundColorStyle",
+        },
+      }],
+    }),
+  });
+  return { status: 'deleted', cell: input.cell };
+}
+
+export async function checkConflicts(user: UserDoc, date: string) {
+  await resolvePlanner(user); // ensures user has sheet connected
+  const days = await getSchedule(user, date, date);
+  const day = days.find((d) => d.date === date);
+  const existingEvents = day ? day.slots : [];
+  return {
+    date,
+    existingEvents,
+    slotsUsed: existingEvents.length,
+    slotsFree: 4 - existingEvents.length,
+  };
+}

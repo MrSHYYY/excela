@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import styles from "./loading.module.css";
 
 export const SIGN_IN_CHANNEL = "excela-google";
@@ -29,6 +30,7 @@ export function startGoogleSignIn(consent = false) {
 
 // A "Sign in with Google" link for any page. Without JavaScript or with a middle-click it is a normal link.
 export function GoogleSignInLink({ className, children }: { className?: string; children: ReactNode }) {
+  const router = useRouter();
   const [pending, setPending] = useState(false);
   const popupRef = useRef<Window | undefined>(undefined);
   useEffect(() => {
@@ -44,10 +46,13 @@ export function GoogleSignInLink({ className, children }: { className?: string; 
     const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
     channel.onmessage = (event: MessageEvent<{ status?: string }>) => {
       setPending(false);
-      if (event.data?.status === "connected" && window.location.pathname !== "/") window.location.assign("/");
+      if (event.data?.status === "connected" && window.location.pathname !== "/") {
+        router.push("/");
+        router.refresh();
+      }
     };
     return () => channel.close();
-  }, []);
+  }, [router]);
 
   return (
     <a
