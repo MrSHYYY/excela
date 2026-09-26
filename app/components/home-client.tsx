@@ -118,12 +118,26 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const smartInputRef = useRef<HTMLTextAreaElement>(null);
   const smartMsgCounter = useRef(0);
+  const prevSmartLoading = useRef(false);
 
   useEffect(() => {
     if (pipeline === "smart") {
       chatMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [smartChat, smartLoading, pipeline]);
+
+  useEffect(() => {
+    if (prevSmartLoading.current && !smartLoading && pipeline === "smart") {
+      smartInputRef.current?.focus();
+    }
+    prevSmartLoading.current = smartLoading;
+  }, [smartLoading, pipeline]);
+
+  useEffect(() => {
+    if (pipeline === "smart") {
+      smartInputRef.current?.focus();
+    }
+  }, [pipeline]);
 
   async function handleSmartSend(textToSend?: string) {
     const raw = typeof textToSend === "string" ? textToSend : smartInput;
@@ -154,7 +168,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
       const data = await res.json();
       if (!res.ok) {
         handleAuthCode(data.code);
-        throw new Error(data.error || "Unable to reach Smart.");
+        throw new Error(data.error || "Unable to reach Excela.");
       }
 
       const assistantMsg: SmartChatMessage = {
@@ -171,6 +185,9 @@ export default function HomeClient({ initialSession }: { initialSession: Session
       setSmartError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setSmartLoading(false);
+      setTimeout(() => {
+        smartInputRef.current?.focus();
+      }, 0);
     }
   }
 
@@ -649,13 +666,13 @@ export default function HomeClient({ initialSession }: { initialSession: Session
               <section className={styles.smartPanel} aria-labelledby="smart-heading">
                 <div className={styles.tabBar}>
                   <div className={styles.smartHeaderTitle}>
-                    <h2 id="smart-heading">Smart</h2>
+                    <h2 id="smart-heading">Excela</h2>
                     <span className={styles.smartBadge}>Planner Agent</span>
                   </div>
                   <div className={styles.segmented} role="group" aria-label="Input type">
                     <button type="button" aria-pressed={false} data-active={false} disabled={loading || syncing || smartLoading} onClick={() => choosePipeline("general")}>General</button>
                     <button type="button" aria-pressed={false} data-active={false} disabled={loading || syncing || smartLoading} onClick={() => choosePipeline("academic")}>Academic</button>
-                    <button type="button" aria-pressed={true} data-active={true} disabled={loading || syncing || smartLoading} onClick={() => choosePipeline("smart")}>Smart</button>
+                    <button type="button" aria-pressed={true} data-active={true} disabled={loading || syncing || smartLoading} onClick={() => choosePipeline("smart")}>Excela</button>
                   </div>
                 </div>
 
@@ -667,7 +684,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                         </svg>
                       </div>
-                      <h3>Talk to Excela Smart</h3>
+                      <h3>Talk to Excela</h3>
                       <p>Ask about your schedule, add assignments, reschedule dates, or complete tasks conversationally.</p>
                       <div className={styles.chatSuggestions}>
                         <button type="button" onClick={() => void handleSmartSend("What do I have today?")}>
@@ -687,7 +704,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                         <div key={msg.id} className={msg.role === "user" ? styles.userMessageRow : styles.assistantMessageRow}>
                           <div className={msg.role === "user" ? styles.userBubble : styles.assistantBubble}>
                             <div className={styles.bubbleAuthor}>
-                              {msg.role === "user" ? "You" : "Smart"}
+                              {msg.role === "user" ? "You" : "Excela"}
                             </div>
                             <div className={styles.bubbleText}>
                               {msg.content}
@@ -698,7 +715,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                       {smartLoading && (
                         <div className={styles.assistantMessageRow}>
                           <div className={`${styles.assistantBubble} ${styles.thinkingBubble}`}>
-                            <div className={styles.bubbleAuthor}>Smart</div>
+                            <div className={styles.bubbleAuthor}>Excela</div>
                             <div className={styles.thinkingText}>
                               <span className={styles.thinkingDot} />
                               <span className={styles.thinkingDot} />
@@ -737,7 +754,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                           event.currentTarget.form?.requestSubmit();
                         }
                       }}
-                      placeholder={session?.sheet ? "Message Smart, e.g. \u2018add CSE340 quiz tomorrow at 10 AM\u2019 or \u2018what do I have today\u2019\u2026" : "Connect a planner to start chatting…"}
+                      placeholder={session?.sheet ? "Message Excela, e.g. \u2018add CSE340 quiz tomorrow at 10 AM\u2019 or \u2018what do I have today\u2019\u2026" : "Connect a planner to start chatting…"}
                       rows={1}
                       disabled={smartLoading || !session?.sheet || !session?.googleAccess}
                       maxLength={4000}
@@ -772,7 +789,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                     <div className={styles.segmented} role="group" aria-label="Input type">
                       <button type="button" aria-pressed={pipeline === "general"} data-active={pipeline === "general"} disabled={loading || syncing} onClick={() => choosePipeline("general")}>General</button>
                       <button type="button" aria-pressed={pipeline === "academic"} data-active={pipeline === "academic"} disabled={loading || syncing} onClick={() => choosePipeline("academic")}>Academic</button>
-                      <button type="button" aria-pressed={false} data-active={false} disabled={loading || syncing} onClick={() => choosePipeline("smart")}>Smart</button>
+                      <button type="button" aria-pressed={false} data-active={false} disabled={loading || syncing} onClick={() => choosePipeline("smart")}>Excela</button>
                     </div>
                   </div>
                   <form onSubmit={handleSubmit} className={styles.form} onPaste={(event) => {

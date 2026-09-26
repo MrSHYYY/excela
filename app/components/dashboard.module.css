@@ -473,24 +473,30 @@
   background: #0d0d0d;
   border: 1px solid #343434;
   border-radius: 10px;
-  transition: border-color 150ms ease;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
 .chatInputWrapper:focus-within {
-  border-color: #555550;
+  border-color: #42523f;
+  box-shadow: 0 0 0 1px #2c382a, 0 2px 8px #00000050;
 }
 
-.chatTextarea {
+.chatTextarea,
+.dashboard textarea.chatTextarea:focus,
+.dashboard textarea.chatTextarea:focus-visible,
+.chatTextarea:focus,
+.chatTextarea:focus-visible {
   flex: 1;
   min-height: 24px;
   max-height: 120px;
   padding: 4px 0;
-  border: none;
+  border: none !important;
   background: transparent;
   color: #efefea;
   font: 14px/1.5 var(--font-geist-sans), sans-serif;
   resize: none;
-  outline: none;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .chatTextarea::placeholder {
