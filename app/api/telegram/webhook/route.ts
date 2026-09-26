@@ -16,6 +16,7 @@ import { decrypt } from "@/lib/crypto";
 import { normalizeOllamaKey } from "@/lib/ollama-key";
 import { canonicalSheetUrl, tabMonthYear } from "@/lib/sheet";
 import { AgentError, runSmartAgent } from "@/lib/agent/agent";
+import { PlannerError, getSchedule } from "@/lib/planner-service";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -39,6 +40,7 @@ You can chat with me naturally to manage your Google Sheets planner.
 💬 Commands:
 • /start [code] — Link your account or view status
 • /view — Open your connected Google Sheets planner
+• /week — View your 7-day schedule
 • /clear — Reset conversation context
 • /disconnect — Disconnect Telegram from your Excela account
 • /help — Show this help message`;
@@ -160,6 +162,71 @@ export async function POST(request: Request) {
       }
 
       await sendTelegramReply(chatId, `📊 Open your Excela planner:\n${sheetUrl}`);
+      return Response.json({ ok: true });
+    }
+
+    // Command: /week
+    if (text === "/week" || text.startsWith("/week@")) {
+      const user = await findUserByTelegramId(sender.id);
+      if (!user) {
+        await sendTelegramReply(
+          chatId,
+          "Your Telegram account is not connected to Excela.\n\nPlease connect it from the Excela web settings first.",
+        );
+        return Response.json({ ok: true });
+      }
+
+      if (!user.sheetId) {
+        await sendTelegramReply(
+          chatId,
+          "You do not have a connected planner yet. Please connect a Google Sheets planner in Excela setup first.",
+        );
+        return Response.json({ ok: true });
+      }
+
+      void sendTelegramChatAction(chatId, "typing");
+
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const start = new Date(`${today}T00:00:00Z`);
+
+        const days: { dateStr: string; dateObj: Date }[] = [];
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate() + i));
+          days.push({
+            dateStr: d.toISOString().slice(0, 10),
+            dateObj: d,
+          });
+        }
+
+        const from = days[0].dateStr;
+        const to = days[6].dateStr;
+
+        const schedule = await getSchedule(user, from, to);
+        const scheduleByDate = new Map(schedule.map((row) => [row.date, row.slots]));
+
+        const lines = days.map(({ dateStr, dateObj }) => {
+          const monthStr = dateObj.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
+          const dayNum = dateObj.getUTCDate();
+          const weekdayStr = dateObj.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }).toUpperCase();
+
+          const slots = scheduleByDate.get(dateStr) ?? [];
+          const eventTexts = slots.map((s) => s.text).filter(Boolean);
+          const content = eventTexts.length > 0 ? eventTexts.join(" | ") : "—";
+
+          return `${monthStr} ${dayNum}: ${weekdayStr} → ${content}`;
+        });
+
+        await sendTelegramReply(chatId, lines.join("\n"));
+      } catch (error) {
+        console.error("Telegram /week error:", error);
+        const errorMsg =
+          error instanceof PlannerError
+            ? error.message
+            : "Could not retrieve your schedule right now. Please try again.";
+        await sendTelegramReply(chatId, errorMsg);
+      }
+
       return Response.json({ ok: true });
     }
 
