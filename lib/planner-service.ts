@@ -31,7 +31,7 @@ type GridSheet = {
 type SheetMeta = { properties: { title: string; sheetId: number } };
 
 function isWhite(color: Color | undefined): boolean {
-  return Boolean(color && (color.red ?? 0) >= 0.999 && (color.green ?? 0) >= 0.999 && (color.blue ?? 0) >= 0.999);
+  return Boolean(color && (color.red ?? 0) >= 0.98 && (color.green ?? 0) >= 0.98 && (color.blue ?? 0) >= 0.98);
 }
 function isPendingRed(color: Color | undefined): boolean {
   if (!color) return false;
@@ -45,22 +45,40 @@ function isCompletedBlue(color: Color | undefined): boolean {
 const isBlank = (text: string) => !text.replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "");
 
 /**
- * A slot is empty ONLY if it has no visible text AND no background color.
- * Plain unformatted cells have no background color (or white).
- * Cells with reset formatting (white foreground on white/no bg) are also considered having no visible text.
+ * A slot is occupied IF AND ONLY IF:
+ * 1. It has an active event background color: Pending Red or Completed Blue, OR
+ * 2. It has visible, non-reset text (non-blank text where foreground is NOT invisible white text).
+ *
+ * Any other slot is EMPTY:
+ * - Empty text with default white background
+ * - Empty text with zebra column tint (#f2f2f2)
+ * - Empty text with weekend gray tint (#d6dce4)
+ * - Cleared / reset cells with invisible text (white foreground on non-event bg)
  */
 export function isSlotEmpty(cell: GridCell | undefined): boolean {
   if (!cell) return true;
-  const text = cell.formattedValue ?? "";
   const format = cell.effectiveFormat;
   const bg = format?.backgroundColor;
+
+  // Active event fills: pending red or completed blue are NEVER empty.
+  if (isPendingRed(bg) || isCompletedBlue(bg)) {
+    return false;
+  }
+
+  const text = cell.formattedValue ?? "";
+  if (isBlank(text)) {
+    // Blank/whitespace text on any template bg (white, zebra, weekend gray) is EMPTY.
+    return true;
+  }
+
+  // If there is text, check if it's invisible reset fill (white foreground on non-event bg).
   const fg = format?.textFormat?.foregroundColor;
+  if (isWhite(fg)) {
+    return true;
+  }
 
-  const hasNoBg = !bg || isWhite(bg);
-  const isResetFill = isWhite(fg) && hasNoBg;
-  const hasNoText = isBlank(text) || isResetFill;
-
-  return hasNoText && hasNoBg;
+  // Cell has visible text with normal foreground color (e.g. manual user entry).
+  return false;
 }
 
 /** A real YYYY-MM-DD used everywhere in the planner service; tools must resolve dates before calling in. */
@@ -278,7 +296,7 @@ export async function createEvent(user: UserDoc, input: { course: string; title:
 
 const PENDING_FORMAT = { backgroundColorStyle: { rgbColor: { red: 153/255, green: 27/255, blue: 27/255 } }, textFormat: { foregroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } } } };
 const COMPLETED_FORMAT = { backgroundColorStyle: { rgbColor: { red: 30/255, green: 58/255, blue: 138/255 } }, textFormat: { foregroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } } } };
-const CLEAR_FORMAT = { backgroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } }, textFormat: { foregroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } } } };
+const CLEAR_FORMAT = { backgroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } }, textFormat: { foregroundColorStyle: { rgbColor: { red: 0.13333334, green: 0.16470589, blue: 0.20784314 } } } };
 
 export type EventMatch = { date: string; sheet: string; sheetId: number; rowIndex: number; text: string; status: DaySlot['status']; cell: string; column: string };
 
@@ -342,7 +360,6 @@ export async function moveEvent(user: UserDoc, input: { cell: string; sourceShee
         repeatCell: {
           range: sourceRange,
           cell: {
-            userEnteredValue: { stringValue: '' },
             userEnteredFormat: CLEAR_FORMAT,
           },
           fields: "userEnteredValue,userEnteredFormat.backgroundColorStyle,userEnteredFormat.textFormat.foregroundColorStyle",
@@ -409,7 +426,6 @@ export async function deleteEvent(user: UserDoc, input: { cell: string; sheetId:
         repeatCell: {
           range,
           cell: {
-            userEnteredValue: { stringValue: '' },
             userEnteredFormat: CLEAR_FORMAT,
           },
           fields: "userEnteredValue,userEnteredFormat.backgroundColorStyle,userEnteredFormat.textFormat.foregroundColorStyle",

@@ -1,5 +1,6 @@
 import { GoogleAccessError, googleAccessToken } from "@/ai/google-auth";
 import { getSessionUser, isPlannerRequest } from "@/lib/auth";
+import { isSlotEmpty } from "@/lib/planner-service";
 import { monthTabPattern } from "@/lib/sheet";
 
 export const runtime = "nodejs";
@@ -21,9 +22,6 @@ type GridSheet = {
   data?: { startRow?: number; startColumn?: number; rowData?: { values?: GridCell[] }[] }[];
 };
 
-function isWhite(color: Color | undefined): boolean {
-  return Boolean(color && (color.red ?? 0) >= 0.999 && (color.green ?? 0) >= 0.999 && (color.blue ?? 0) >= 0.999);
-}
 
 // Recognize red fills (including older lighter reds), not blue/neutral/other task colors.
 function isPendingRed(color: Color | undefined): boolean {
@@ -281,11 +279,7 @@ export async function POST(request: Request) {
               const column = (block.startColumn ?? 0) + columnOffset - 3;
               if (column < 0 || column > 4) continue;
               cells.set(`${target.sheetId}:${rowIndex + 2}:${column + 3}`, cell);
-              const format = cell.effectiveFormat;
-              const resetFill = column > 0 &&
-                isWhite(format?.textFormat?.foregroundColor) &&
-                (!format?.backgroundColor || isWhite(format.backgroundColor));
-              rows[rowIndex][column] = resetFill ? "" : (cell.formattedValue ?? "");
+              rows[rowIndex][column] = (column > 0 && isSlotEmpty(cell)) ? "" : (cell?.formattedValue ?? "");
             }
           }
         }
@@ -346,25 +340,24 @@ export async function POST(request: Request) {
 
       if (
         slots.some(
-          (slot) =>
-            String(row[slot] ?? "")
+          (slot) => {
+            const cell = cells.get(`${target.sheetId}:${rowIndex + 2}:${slot + 3}`);
+            if (isSlotEmpty(cell)) return false;
+            return String(cell?.formattedValue ?? "")
               .trim()
-              .toLowerCase() === label.toLowerCase()
+              .toLowerCase() === label.toLowerCase();
+          }
         )
       ) {
         skipped++;
         continue;
       }
 
-      // Fill E → F → G → H using what the user sees. Hidden raw values and
-      // empty-result formulas must not push an event past a visually empty slot.
+      // Fill E → F → G → H using what the user sees.
       // Only event cells are eligible; date cells are never overwritten.
       const slot = slots.find((index) => {
-        const text = String(row[index] ?? "").replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "");
         const cell = cells.get(`${target.sheetId}:${rowIndex + 2}:${index + 3}`);
-        const bg = cell?.effectiveFormat?.backgroundColor;
-        const hasNoBg = !bg || isWhite(bg);
-        return text === "" && hasNoBg;
+        return isSlotEmpty(cell);
       });
 
       if (slot === undefined) {
