@@ -13,7 +13,7 @@ import type { Session } from "@/lib/session-payload";
 import { IMAGE_TYPES, MAX_IMAGE_BYTES, type ImageInput } from "@/lib/image-input";
 
 
-type Pipeline = "academic" | "general";
+type Pipeline = "academic" | "general" | "smart";
 
 type ViewLink = { sheet: string; url: string; base: string; gid: number; row: number };
 
@@ -315,6 +315,34 @@ export default function HomeClient({ initialSession }: { initialSession: Session
     setError("");
     resetResults();
 
+    if (pipeline === "smart") {
+      setLoading(true);
+      addLog("Asking Smart…");
+      try {
+        const result = await fetch("/api/agent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: trimmedMessage, today: localToday() }),
+        });
+        const data = await result.json();
+        if (!result.ok) {
+          handleAuthCode(data.code);
+          throw new Error(data.error || "Unable to reach Smart.");
+        }
+        setResponse(typeof data.reply === "string" ? data.reply : "");
+        for (const call of Array.isArray(data.toolCalls) ? data.toolCalls : []) {
+          addLog(`${call.name}${call.ok ? "" : " failed"}`, call.ok ? "ok" : "error");
+        }
+        addLog("Smart replied.", "ok");
+      } catch (error) {
+        addLog(error instanceof Error ? error.message : "Something went wrong.", "error");
+        setError(error instanceof Error ? error.message : "Something went wrong.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     setLoading(true);
     addLog(`Reading your message with Ollama (${pipeline} pipeline)…`);
 
@@ -568,6 +596,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                 <div className={styles.segmented} role="group" aria-label="Input type">
                   <button type="button" aria-pressed={pipeline === "general"} data-active={pipeline === "general"} disabled={loading || syncing} onClick={() => choosePipeline("general")}>General</button>
                   <button type="button" aria-pressed={pipeline === "academic"} data-active={pipeline === "academic"} disabled={loading || syncing} onClick={() => choosePipeline("academic")}>Academic</button>
+                  <button type="button" aria-pressed={pipeline === "smart"} data-active={pipeline === "smart"} disabled={loading || syncing} onClick={() => choosePipeline("smart")}>Smart</button>
                 </div>
               </div>
               <form onSubmit={handleSubmit} className={styles.form} onPaste={(event) => {
@@ -593,12 +622,12 @@ export default function HomeClient({ initialSession }: { initialSession: Session
                       event.preventDefault();
                       event.currentTarget.form?.requestSubmit();
                     }
-                  }} placeholder={attachment ? "Add context (optional)…" : pipeline === "general" ? "Type a plan, or paste a screenshot here…" : "Type an announcement, or paste a screenshot here…"} rows={7} required={!attachment} maxLength={20000} disabled={loading || syncing || !session.sheet} />
+                  }} placeholder={attachment ? "Add context (optional)…" : pipeline === "smart" ? "Ask Smart about your planner, e.g. \u2018what do I have today\u2019…" : pipeline === "general" ? "Type a plan, or paste a screenshot here…" : "Type an announcement, or paste a screenshot here…"} rows={7} required={!attachment} maxLength={20000} disabled={loading || syncing || !session.sheet} />
                 <div className={styles.formFooter}>
                   <input ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachImage(file); }} />
-                  <button type="button" className={styles.secondary} disabled={loading || syncing || readingImage || !setupComplete} onClick={() => imageInputRef.current?.click()}>{readingImage ? "Reading image…" : attachment ? "Replace image" : "Add image +"}</button>
+                  <button type="button" className={styles.secondary} disabled={loading || syncing || readingImage || !setupComplete || pipeline === "smart"} onClick={() => imageInputRef.current?.click()}>{readingImage ? "Reading image…" : attachment ? "Replace image" : "Add image +"}</button>
                   <button type="submit" className={styles.primary} disabled={loading || syncing || readingImage || !session.googleAccess || !setupComplete}>
-                    {loading ? "Injecting…" : syncing ? "Injecting…" : "Inject ↗"}
+                    {loading ? (pipeline === "smart" ? "Asking…" : "Injecting…") : syncing ? "Injecting…" : pipeline === "smart" ? "Ask ↗" : "Inject ↗"}
                   </button>
                 </div>
                 <p className={styles.hint}>{session.sheet ? <><span className={styles.desktopKeyboardHint}>Press Enter to inject · Shift+Enter for a new line.</span><span className={styles.touchKeyboardHint}>Return adds a new line · Tap Inject when ready.</span></> : "Connect or generate a planner to get started."}</p>
