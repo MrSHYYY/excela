@@ -21,9 +21,30 @@ export type UserDoc = {
   generatedSheetId?: string;
   /** Short lock while a planner is being created or reset, so two requests can't both create one. */
   plannerLockUntil?: Date;
+  /** Telegram account connection information. Present when linked. */
+  telegram?: UserTelegramConnection;
   createdAt: Date;
   updatedAt: Date;
   lastLoginAt: Date;
+};
+
+export type UserTelegramConnection = {
+  /** Telegram user id */
+  id: number;
+  /** Telegram chat id (usually identical to id for private chats) */
+  chatId: number;
+  username?: string;
+  firstName?: string;
+  linkedAt: Date;
+};
+
+/** Collection `telegram_linking_tokens`. Ephemeral one-time linking codes. */
+export type TelegramLinkingTokenDoc = {
+  /** The linking code (e.g. 8-char alphanumeric). */
+  _id: string;
+  userId: ObjectId;
+  createdAt: Date;
+  expiresAt: Date;
 };
 
 /** Collection `sessions`. Expired documents are removed by a MongoDB TTL index. */

@@ -1,0 +1,171 @@
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 500;
+  width: fit-content;
+}
+
+.statusConnected {
+  background: #182015;
+  color: #c9dfbd;
+  border: 1px solid #3b4b32;
+}
+
+.statusDisconnected {
+  background: #1f1f1f;
+  color: #a1a1aa;
+  border: 1px solid #333333;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.statusDotConnected {
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.4);
+}
+
+.statusDotDisconnected {
+  background: #71717a;
+}
+
+.detailsList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin: 12px 0;
+  padding: 16px;
+  background: #0d0d0d;
+  border: 1px solid #262626;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.detailRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #d4d4d8;
+}
+
+.detailLabel {
+  color: #71717a;
+  font-size: 13px;
+}
+
+.detailValue {
+  font-family: var(--font-geist-mono), monospace;
+  color: #f4f4f5;
+  font-size: 13px;
+}
+
+.codeBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 24px;
+  background: #0d0d0d;
+  border: 1px dashed #3f3f46;
+  border-radius: 10px;
+  margin: 16px 0;
+  text-align: center;
+}
+
+.codeDisplay {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  color: #f4f4f5;
+  padding: 8px 16px;
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  user-select: all;
+}
+
+.codeActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  width: 100%;
+}
+
+.instructionSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  margin: 12px 0;
+  counter-reset: step-counter;
+}
+
+.instructionStep {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 14px;
+  color: #a1a1aa;
+  line-height: 1.5;
+}
+
+.stepNumber {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #27272a;
+  color: #e4e4e7;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.pollingNotice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #9ca3af;
+  margin-top: 8px;
+}
+
+.disconnectConfirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 16px;
+  background: #1c1111;
+  border: 1px solid #551c1c;
+  border-radius: 8px;
+  margin-top: 16px;
+}
+
+.dangerButton {
+  background: #991b1b;
+  color: #ffffff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 14px;
+  transition: background 0.15s ease;
+}
+
+.dangerButton:hover:not(:disabled) {
+  background: #b91c1c;
+}

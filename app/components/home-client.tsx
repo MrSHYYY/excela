@@ -638,6 +638,7 @@ export default function HomeClient({ initialSession }: { initialSession: Session
       <aside id="dashboard-sidebar" aria-label="Sidebar" aria-hidden={!sidebarOpen} inert={!sidebarOpen} className={styles.sidebar}>
         <nav aria-label="Planner settings" className={styles.sidebarNav}>
           <PendingLink href="/setup" className={styles.sidebarAction}>Planner &amp; API settings ↗</PendingLink>
+          <PendingLink href="/telegram" className={styles.sidebarAction}>Telegram bot ↗</PendingLink>
         </nav>
       </aside>
       {sidebarOpen && <button type="button" className={styles.backdrop} aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} />}

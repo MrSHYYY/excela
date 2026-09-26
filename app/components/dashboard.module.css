@@ -102,7 +102,7 @@
 .navTitle, .identityText, .identityText p:first-child { font-size: 14px; }
 .sheetLink { font-size: 14px; padding: 10px 16px; color: #c9e5cf; background: #193426; border-color: #355b42; }
 .sheetLink:hover { background: #244732; border-color: #568263; }
-.sidebarNav { padding: 18px 12px; }
+.sidebarNav { padding: 18px 12px; display: flex; flex-direction: column; gap: 10px; }
 .sidebarAction { display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 12px; border: 1px solid #30352f; border-radius: 8px; background: #171c16; color: #d0d9ca; text-align: left; font-size: 15px; }
 .sidebarAction:hover:not(:disabled) { background: #242e21; border-color: #4c5b45; }
 .eyebrow { font-size: 11px; letter-spacing: 1.1px; }

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { googleClient } from "@/ai/google-auth";
 import { SESSION_COOKIE, getSessionUser, isSameOrigin } from "@/lib/auth";
 import { decrypt } from "@/lib/crypto";
-import { sessionsCollection, usersCollection } from "@/lib/mongodb";
+import { sessionsCollection, telegramTokensCollection, usersCollection } from "@/lib/mongodb";
 
 export const runtime = "nodejs";
 
@@ -17,9 +17,10 @@ export async function DELETE(request: Request) {
     const { user } = current;
     const refreshToken = user.refreshToken ? decrypt(user.refreshToken) : null;
 
-    // Every collection that holds this user's data: sessions first, then the user record itself
-    // (profile, saved planner link, encrypted Google token).
+    // Every collection that holds this user's data: sessions, pending linking tokens, then the user record itself
+    // (profile, saved planner link, encrypted Google token, telegram connection).
     await (await sessionsCollection()).deleteMany({ userId: user._id });
+    await (await telegramTokensCollection()).deleteMany({ userId: user._id });
     await (await usersCollection()).deleteOne({ _id: user._id });
 
     // Best effort: also cancel Excela's access on Google's side. The token is no longer stored anywhere.

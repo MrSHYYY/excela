@@ -95,7 +95,10 @@ export default function SetupClient({ initialSession }: { initialSession: Signed
   return <div className={setup.shell}>
     <header className={setup.header}>
       <Link href="/" className={brand.brand} aria-label="Excela home"><Image src="/excela-r.png" alt="" width={34} height={34} priority />excela<span className={brand.brandDot}>.</span></Link>
-      <PendingLink href="/" className={styles.textButton}>← Dashboard</PendingLink>
+      <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+        <PendingLink href="/telegram" className={styles.textButton}>Telegram bot ↗</PendingLink>
+        <PendingLink href="/" className={styles.textButton}>← Dashboard</PendingLink>
+      </div>
     </header>
     <main className={setup.main}>
       <p className={styles.eyebrow}>MAKE IT YOURS</p><h1>Set up your workspace.</h1>

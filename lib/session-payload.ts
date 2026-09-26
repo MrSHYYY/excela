@@ -13,6 +13,12 @@ export type Session =
       hasGeneratedPlanner: boolean;
       googleAccess: boolean;
       hasApiKey: boolean;
+      telegram?: {
+        connected: boolean;
+        username?: string;
+        firstName?: string;
+        linkedAt?: string;
+      };
     };
 
 export function sessionPayload(user: UserDoc): Session {
@@ -25,5 +31,13 @@ export function sessionPayload(user: UserDoc): Session {
     hasGeneratedPlanner: Boolean(user.generatedSheetId),
     hasApiKey: Boolean(user.ollamaApiKey && decrypt(user.ollamaApiKey)),
     googleAccess: Boolean(user.googleScopes?.includes(driveFileScope) && user.refreshToken && decrypt(user.refreshToken)),
+    telegram: user.telegram
+      ? {
+          connected: true,
+          username: user.telegram.username,
+          firstName: user.telegram.firstName,
+          linkedAt: user.telegram.linkedAt ? new Date(user.telegram.linkedAt).toISOString() : undefined,
+        }
+      : { connected: false },
   };
 }
