@@ -21,6 +21,7 @@ import {
   DEFAULT_TIMEZONE,
   disableDailyNotification,
   formatTime12h,
+  getZonedParts,
   parseTimeInput,
   setDailyNotification,
 } from "@/lib/telegram/auto-notify";
@@ -173,8 +174,8 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
 
-    // Command: /week
-    if (text === "/week" || text.startsWith("/week@")) {
+    // Command: /week (tolerant of /weel, /weekly, /week@bot, trailing spaces, case-insensitive)
+    if (/^\/(?:week|weel|weekly)(?:@\S+)?(?:\s+.*)?$/i.test(text)) {
       const user = await findUserByTelegramId(sender.id);
       if (!user) {
         await sendTelegramReply(
@@ -195,7 +196,9 @@ export async function POST(request: Request) {
       void sendTelegramChatAction(chatId, "typing");
 
       try {
-        const today = new Date().toISOString().slice(0, 10);
+        const timeZone = user.dailyNotification?.timezone || DEFAULT_TIMEZONE || "Asia/Dhaka";
+        const zoned = getZonedParts(new Date(), timeZone);
+        const today = `${zoned.year}-${String(zoned.month).padStart(2, "0")}-${String(zoned.day).padStart(2, "0")}`;
         const start = new Date(`${today}T00:00:00Z`);
 
         const days: { dateStr: string; dateObj: Date }[] = [];
@@ -368,7 +371,9 @@ export async function POST(request: Request) {
     // Show typing status indicator in Telegram
     void sendTelegramChatAction(chatId, "typing");
 
-    const today = new Date().toISOString().slice(0, 10);
+    const agentTimezone = user.dailyNotification?.timezone || DEFAULT_TIMEZONE || "Asia/Dhaka";
+    const zonedToday = getZonedParts(new Date(), agentTimezone);
+    const today = `${zonedToday.year}-${String(zonedToday.month).padStart(2, "0")}-${String(zonedToday.day).padStart(2, "0")}`;
     const history = await getTelegramConversation(chatId);
 
     try {

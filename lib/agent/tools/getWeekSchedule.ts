@@ -5,17 +5,23 @@ export const getWeekScheduleTool = {
   type: "function",
   function: {
     name: "get_week_schedule",
-    description: "Get the user's full schedule for the current week (Monday through Sunday). Use for 'what's my week look like' or 'this week's schedule'.",
+    description: "Get the user's schedule for 7 consecutive days starting today (today through the next 6 days).",
     parameters: { type: "object", properties: {}, additionalProperties: false },
   },
 } as const;
 
 export async function runGetWeekSchedule(user: UserDoc, today: string) {
-  const d = new Date(`${today}T00:00:00Z`);
-  const dayOfWeek = d.getUTCDay(); // 0=Sun
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const monday = new Date(d.getTime() + mondayOffset * 86_400_000).toISOString().slice(0, 10);
-  const sunday = new Date(d.getTime() + (mondayOffset + 6) * 86_400_000).toISOString().slice(0, 10);
-  const days = await getSchedule(user, monday, sunday);
-  return { from: monday, to: sunday, days: days.map((day) => ({ date: day.date, items: day.slots.map(({ text, status }) => ({ text, status })) })) };
+  const start = new Date(`${today}T00:00:00Z`);
+  const end = new Date(start.getTime() + 6 * 86_400_000);
+  const to = end.toISOString().slice(0, 10);
+  const days = await getSchedule(user, today, to);
+  return {
+    from: today,
+    to,
+    days: days.map((day) => ({
+      date: day.date,
+      items: day.slots.map(({ text, status }) => ({ text, status })),
+    })),
+  };
 }
+
