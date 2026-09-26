@@ -27,6 +27,7 @@ export function getDb(): Promise<Db> {
         db.collection<UserDoc>("users").createIndex({ googleId: 1 }, { unique: true }),
         db.collection<UserDoc>("users").createIndex({ email: 1 }),
         db.collection<UserDoc>("users").createIndex({ "telegram.id": 1 }, { unique: true, sparse: true }),
+        db.collection<UserDoc>("users").createIndex({ "dailyNotification.enabled": 1, "dailyNotification.nextRunAt": 1 }, { sparse: true }),
         db.collection<SessionDoc>("sessions").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
         db.collection<SessionDoc>("sessions").createIndex({ userId: 1 }),
         db.collection<PendingConfirmation>("pending_confirmations").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),

@@ -17,6 +17,13 @@ import { normalizeOllamaKey } from "@/lib/ollama-key";
 import { canonicalSheetUrl, tabMonthYear } from "@/lib/sheet";
 import { AgentError, runSmartAgent } from "@/lib/agent/agent";
 import { PlannerError, getSchedule } from "@/lib/planner-service";
+import {
+  DEFAULT_TIMEZONE,
+  disableDailyNotification,
+  formatTime12h,
+  parseTimeInput,
+  setDailyNotification,
+} from "@/lib/telegram/auto-notify";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -41,6 +48,7 @@ You can chat with me naturally to manage your Google Sheets planner.
 • /start [code] — Link your account or view status
 • /view — Open your connected Google Sheets planner
 • /week — View your 7-day schedule
+• /auto [time] — Configure daily schedule notification (e.g. /auto 6:30pm, /auto off)
 • /clear — Reset conversation context
 • /disconnect — Disconnect Telegram from your Excela account
 • /help — Show this help message`;
@@ -225,6 +233,62 @@ export async function POST(request: Request) {
             ? error.message
             : "Could not retrieve your schedule right now. Please try again.";
         await sendTelegramReply(chatId, errorMsg);
+      }
+
+      return Response.json({ ok: true });
+    }
+
+    // Command: /auto
+    if (text === "/auto" || text.startsWith("/auto ") || text.startsWith("/auto@")) {
+      const user = await findUserByTelegramId(sender.id);
+      if (!user) {
+        await sendTelegramReply(
+          chatId,
+          "Your Telegram account is not connected to Excela.\n\nPlease connect it from the Excela web settings first.",
+        );
+        return Response.json({ ok: true });
+      }
+
+      // Extract argument after /auto or /auto@botname
+      const match = text.match(/^\/auto(?:@\S+)?(?:\s+(.*))?$/i);
+      const arg = match?.[1]?.trim() ?? "";
+
+      // 1. Status query: "/auto" with no argument
+      if (!arg) {
+        const config = user.dailyNotification;
+        if (config?.enabled && config.time) {
+          await sendTelegramReply(
+            chatId,
+            `Daily notifications: ON\nTime: ${formatTime12h(config.time)}`,
+          );
+        } else {
+          await sendTelegramReply(chatId, "Daily notifications: OFF");
+        }
+        return Response.json({ ok: true });
+      }
+
+      // 2. Disabling: "/auto off"
+      if (arg.toLowerCase() === "off") {
+        await disableDailyNotification(user._id);
+        await sendTelegramReply(chatId, "Daily notifications disabled.");
+        return Response.json({ ok: true });
+      }
+
+      // 3. Setting time: "/auto 6:30pm", "/auto 9am", "/auto 18:30", etc.
+      const parsedTime = parseTimeInput(arg);
+      if (!parsedTime) {
+        await sendTelegramReply(chatId, "Usage: /auto 6:30pm");
+        return Response.json({ ok: true });
+      }
+
+      const isUpdate = Boolean(user.dailyNotification?.enabled && user.dailyNotification?.time);
+      await setDailyNotification(user._id, parsedTime, user.dailyNotification?.timezone || DEFAULT_TIMEZONE);
+
+      const timeFormatted = formatTime12h(parsedTime);
+      if (isUpdate) {
+        await sendTelegramReply(chatId, `Daily notifications updated.\nTime: ${timeFormatted}`);
+      } else {
+        await sendTelegramReply(chatId, `Daily notifications enabled.\nTime: ${timeFormatted}`);
       }
 
       return Response.json({ ok: true });

@@ -23,9 +23,25 @@ export type UserDoc = {
   plannerLockUntil?: Date;
   /** Telegram account connection information. Present when linked. */
   telegram?: UserTelegramConnection;
+  /** Telegram daily automatic notification schedule. */
+  dailyNotification?: DailyNotificationConfig;
   createdAt: Date;
   updatedAt: Date;
   lastLoginAt: Date;
+};
+
+export type DailyNotificationConfig = {
+  enabled: boolean;
+  /** Normalized 24h time string: "HH:mm" (e.g. "18:30") */
+  time: string;
+  /** Timezone name (e.g. "Asia/Dhaka") */
+  timezone?: string;
+  /** Next scheduled execution time in UTC. Indexed for efficient cron matching. */
+  nextRunAt?: Date;
+  /** Last time notification was sent successfully. */
+  lastSentAt?: Date;
+  /** Lock for atomic cron claiming to prevent duplicate execution across concurrent invocations. */
+  processingLockUntil?: Date;
 };
 
 export type UserTelegramConnection = {
