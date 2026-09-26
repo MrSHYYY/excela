@@ -5,7 +5,7 @@ export const updateEventTool = {
   type: "function",
   function: {
     name: "update_event",
-    description: "Update an existing event's title or course. You MUST call find_event first to get the exact event details, then pass the cell and sheetId from that result. Never guess cell references.",
+    description: "Update an existing event's title or course. Pass the cell and sheetId (from find_event or a previous tool result in the conversation), plus the newTitle and optional newCourse.",
     parameters: {
       type: "object",
       properties: {

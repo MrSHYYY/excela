@@ -5,7 +5,7 @@ export const markCompleteTool = {
   type: "function",
   function: {
     name: "mark_complete",
-    description: "Mark a specific event as completed (changes it from red/pending to blue/completed). You MUST call find_event first. Pass the cell and sheetId from that result.",
+    description: "Mark a specific event as completed (changes it from red/pending to blue/completed). Pass the cell and sheetId (from find_event or a previous tool result in the conversation).",
     parameters: {
       type: "object",
       properties: {

@@ -6,7 +6,7 @@ export const moveEventTool = {
   type: "function",
   function: {
     name: "move_event",
-    description: "Move an existing event to a different date. You MUST call find_event first to get the exact event details. Pass the cell, sheetId, rowIndex, sourceDate, and text from that result, plus the target date.",
+    description: "Move an existing event to a different date. Pass the cell, sourceSheetId, sourceRowIndex, sourceDate, and text (from find_event or a previous tool result in the conversation), plus the target date.",
     parameters: {
       type: "object",
       properties: {

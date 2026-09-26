@@ -199,7 +199,7 @@ export async function findEvents(user: UserDoc, query: string, from: string, to:
   );
 }
 
-export type CreateEventResult = { status: "created" | "duplicate"; date: string; label: string; cell?: string; link?: string };
+export type CreateEventResult = { status: "created" | "duplicate"; date: string; label: string; cell?: string; sheetId?: number; rowIndex?: number; link?: string };
 
 /**
  * Adds one event to the first empty slot on `date`, reusing the exact rules app/api/sync/route.ts uses
@@ -252,7 +252,7 @@ export async function createEvent(user: UserDoc, input: { course: string; title:
 
   const cell = `${SLOT_COLUMNS[slotIndex]}${row.rowIndex + 1}`;
   const link = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${tab.sheetId}&range=A${Math.max(1, row.rowIndex + 1 - 12)}`;
-  return { status: "created", date, label, cell, link };
+  return { status: "created", date, label, cell, sheetId: tab.sheetId, rowIndex: row.rowIndex, link };
 }
 
 const PENDING_FORMAT = { backgroundColorStyle: { rgbColor: { red: 153/255, green: 27/255, blue: 27/255 } }, textFormat: { foregroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } } } };
@@ -307,7 +307,7 @@ export async function updateEvent(user: UserDoc, input: { cell: string; sheetId:
       }],
     }),
   });
-  return { status: 'updated', cell: input.cell, label };
+  return { status: 'updated', cell: input.cell, sheetId: input.sheetId, label };
 }
 
 export async function moveEvent(user: UserDoc, input: { cell: string; sourceSheetId: number; sourceRowIndex: number; sourceDate: string; text: string; targetDate: string }) {
@@ -332,7 +332,7 @@ export async function moveEvent(user: UserDoc, input: { cell: string; sourceShee
 
   const createRes = await createEvent(user, { course: "", title: input.text, date: input.targetDate });
   
-  return { status: 'moved', from: { cell: input.cell, date: input.sourceDate }, to: { cell: createRes.cell, date: input.targetDate }, label: createRes.label };
+  return { status: 'moved', from: { cell: input.cell, sheetId: input.sourceSheetId, date: input.sourceDate }, to: { cell: createRes.cell, sheetId: createRes.sheetId, date: input.targetDate }, label: createRes.label };
 }
 
 export async function markEventComplete(user: UserDoc, input: { cell: string; sheetId: number }) {
@@ -353,7 +353,7 @@ export async function markEventComplete(user: UserDoc, input: { cell: string; sh
       }],
     }),
   });
-  return { status: 'completed', cell: input.cell };
+  return { status: 'completed', cell: input.cell, sheetId: input.sheetId };
 }
 
 export async function markEventIncomplete(user: UserDoc, input: { cell: string; sheetId: number }) {
@@ -374,7 +374,7 @@ export async function markEventIncomplete(user: UserDoc, input: { cell: string; 
       }],
     }),
   });
-  return { status: 'marked_incomplete', cell: input.cell };
+  return { status: 'marked_incomplete', cell: input.cell, sheetId: input.sheetId };
 }
 
 export async function deleteEvent(user: UserDoc, input: { cell: string; sheetId: number; confirmationToken: string }) {

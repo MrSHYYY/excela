@@ -5,7 +5,7 @@ export const markIncompleteTool = {
   type: "function",
   function: {
     name: "mark_incomplete",
-    description: "Mark a completed event as incomplete/pending again (changes it from blue back to red). You MUST call find_event first. Pass the cell and sheetId from that result.",
+    description: "Mark a completed event as incomplete/pending again (changes it from blue back to red). Pass the cell and sheetId (from find_event or a previous tool result in the conversation).",
     parameters: {
       type: "object",
       properties: {

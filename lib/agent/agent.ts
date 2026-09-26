@@ -7,7 +7,7 @@ export class AgentError extends Error {
   constructor(message: string, readonly status = 502) { super(message); }
 }
 
-type Message = { role: "system" | "user" | "assistant" | "tool"; content: string; tool_calls?: unknown; name?: string };
+export type AgentMessage = { role: "system" | "user" | "assistant" | "tool"; content: string; tool_calls?: unknown; name?: string };
 type ToolCall = { function: { name: string; arguments: unknown } };
 
 function parseToolCalls(raw: unknown): ToolCall[] {
@@ -18,14 +18,24 @@ function parseToolCalls(raw: unknown): ToolCall[] {
 }
 
 /**
- * The controlled Smart agent loop: send the conversation + registered tools to Ollama, execute any
- * tool the model asks for through the validated executor, feed the real result back, and repeat until
- * the model gives a final answer or the call-count budget runs out. The model can never run anything
- * beyond what lib/agent/executor.ts exposes, and every tool call is scoped to `user` server-side.
+ * The controlled Smart agent loop: send the conversation history + registered tools to Ollama,
+ * execute any tool the model asks for through the validated executor, feed the real result back,
+ * and repeat until the model gives a final answer or the call-count budget runs out.
  */
-export async function runSmartAgent(apiKey: string, user: UserDoc, today: string, userMessage: string): Promise<{ reply: string; log: ToolCallLog[] }> {
-  const messages: Message[] = [
+export async function runSmartAgent(
+  apiKey: string,
+  user: UserDoc,
+  today: string,
+  userMessage: string,
+  history: AgentMessage[] = []
+): Promise<{ reply: string; log: ToolCallLog[]; history: AgentMessage[] }> {
+  const sanitizedHistory: AgentMessage[] = history
+    .filter((msg) => msg && typeof msg === "object" && (msg.role === "user" || msg.role === "assistant" || msg.role === "tool"))
+    .slice(-20);
+
+  const messages: AgentMessage[] = [
     { role: "system", content: buildSmartInstruction(today) },
+    ...sanitizedHistory,
     { role: "user", content: userMessage },
   ];
   const log: ToolCallLog[] = [];
@@ -57,7 +67,8 @@ export async function runSmartAgent(apiKey: string, user: UserDoc, today: string
     if (!toolCalls.length) {
       const text = typeof assistantMessage.content === "string" ? assistantMessage.content.trim() : "";
       if (!text) throw new AgentError("Ollama returned no text. Please try again.");
-      return { reply: text, log };
+      messages.push({ role: "assistant", content: text });
+      return { reply: text, log, history: messages.slice(1) };
     }
 
     messages.push({ role: "assistant", content: typeof assistantMessage.content === "string" ? assistantMessage.content : "", tool_calls: assistantMessage.tool_calls });
