@@ -1,9 +1,14 @@
 const field = document.getElementById("message");
-const button = document.getElementById("inject");
+const sendButton = document.getElementById("send");
 const setup = document.getElementById("setup");
 const status = document.getElementById("status");
-const pipeline = document.getElementById("pipeline");
 const sitePicker = document.getElementById("site");
+const messagesEl = document.getElementById("messages");
+const emptyState = document.getElementById("empty-state");
+const includePage = document.getElementById("include-page");
+const pageContextBox = document.getElementById("page-context");
+const pageLabel = document.getElementById("page-label");
+const newChatButton = document.getElementById("new-chat");
 let site = "https://excela.cfat.site";
 let checking = true;
 let refreshId = 0;
@@ -14,84 +19,86 @@ let busy = false;
 let authenticated = false;
 let timer;
 let sending = false;
-let image = null;
-let readingImage = false;
-const removeImage = document.getElementById("remove-image");
+let activeTab = null; // { title, url } captured once per popup open via activeTab permission
 
 function updateControls() {
-  sitePicker.disabled = busy || readingImage || sending;
+  sitePicker.disabled = busy || sending;
   document.getElementById("loading").hidden = !checking || canCompose;
+  document.getElementById("chat").hidden = !canCompose;
   document.getElementById("form").hidden = !canCompose;
   document.getElementById("keyboard-hint").hidden = !canCompose;
-  button.textContent = busy ? "Injecting…" : checking ? "Connecting…" : "Inject ↗";
-  button.disabled = !ready || busy || readingImage || checking;
+  newChatButton.hidden = !canCompose;
+  sendButton.disabled = !ready || busy || checking || !field.value.trim();
   field.disabled = !canCompose || busy;
-  field.required = !image;
-  pipeline.disabled = busy;
-  removeImage.disabled = busy || readingImage;
+  pageContextBox.classList.toggle("unavailable", !activeTab);
+  includePage.disabled = !activeTab || busy;
 }
 
-async function attachImage(file) {
-  if (!canCompose || busy || readingImage) return;
-  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || !file.size || file.size > 3 * 1024 * 1024) {
-    status.textContent = "Paste one PNG, JPEG or WebP image up to 3 MB.";
-    status.dataset.error = "true";
-    return;
+function renderTranscript(transcript) {
+  messagesEl.innerHTML = "";
+  emptyState.hidden = Boolean(transcript?.length);
+  for (const entry of transcript || []) {
+    if (entry.role === "user") {
+      if (entry.page) {
+        const chip = document.createElement("div");
+        chip.className = "page-chip";
+        chip.textContent = `↗ included ${entry.page.title || entry.page.url}`;
+        messagesEl.appendChild(chip);
+      }
+      const bubble = document.createElement("div");
+      bubble.className = "bubble user";
+      bubble.textContent = entry.text;
+      messagesEl.appendChild(bubble);
+    } else {
+      const bubble = document.createElement("div");
+      bubble.className = "bubble assistant";
+      if (entry.error) bubble.dataset.error = "true";
+      bubble.textContent = entry.text;
+      if (entry.tools?.length) {
+        const chips = document.createElement("div");
+        chips.className = "tool-chips";
+        for (const tool of entry.tools) {
+          const chip = document.createElement("span");
+          chip.className = "tool-chip";
+          chip.dataset.ok = String(tool.ok !== false);
+          chip.textContent = tool.name;
+          chips.appendChild(chip);
+        }
+        bubble.appendChild(chips);
+      }
+      messagesEl.appendChild(bubble);
+    }
   }
-  readingImage = true;
-  status.textContent = "Reading image…";
-  status.dataset.error = "false";
-  updateControls();
-  try {
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(new Error("Could not read the image. Try another file."));
-      reader.readAsDataURL(file);
-    });
-    image = { mimeType: file.type, data: dataUrl.slice(dataUrl.indexOf(",") + 1) };
-    document.getElementById("preview").src = dataUrl;
-    document.getElementById("filename").textContent = file.name || "Pasted screenshot";
-    document.getElementById("attachment").hidden = false;
-    field.placeholder = "Add context (optional)…";
-    status.textContent = ready && !checking ? "Image attached. Ready to inject." : "Image attached. Checking your connection…";
-    status.dataset.error = "false";
-  } catch (error) {
-    status.textContent = error.message;
-    status.dataset.error = "true";
-  } finally {
-    readingImage = false;
-    updateControls();
+  if (busy) {
+    const thinking = document.createElement("div");
+    thinking.className = "bubble thinking";
+    thinking.innerHTML = "<span class=\"dot\"></span><span class=\"dot\"></span><span class=\"dot\"></span>";
+    messagesEl.appendChild(thinking);
   }
+  messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-removeImage.addEventListener("click", () => {
-  image = null;
-  document.getElementById("preview").removeAttribute("src");
-  document.getElementById("attachment").hidden = true;
-  field.placeholder = "Quiz 4 on Sept 27…";
-  status.textContent = "";
-  updateControls();
-});
-document.getElementById("form").addEventListener("paste", (event) => {
-  const images = Array.from(event.clipboardData.items).filter((item) => item.kind === "file" && item.type.startsWith("image/"));
-  if (!images.length) return;
-  event.preventDefault();
-  if (images.length !== 1) {
-    status.textContent = "Attach one image at a time.";
-    status.dataset.error = "true";
-    return;
-  }
-  const file = images[0].getAsFile();
-  if (file) void attachImage(file);
-});
-
-function renderJob(job) {
+function renderJob(job, transcript) {
   busy = Boolean(job?.busy);
-  button.textContent = busy ? "Injecting…" : "Inject ↗";
-  updateControls();
   status.textContent = job?.message || "";
   status.dataset.error = String(Boolean(job?.failed));
+  if (transcript !== undefined) renderTranscript(transcript);
+  updateControls();
+}
+
+async function captureActiveTab() {
+  try {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tab?.url && /^https?:\/\//.test(tab.url)) {
+      activeTab = { title: tab.title || tab.url, url: tab.url };
+      pageLabel.textContent = `Include this page (${new URL(tab.url).hostname})`;
+    } else {
+      activeTab = null;
+      pageLabel.textContent = "Include this page";
+    }
+  } catch {
+    activeTab = null;
+  }
 }
 
 async function refresh() {
@@ -111,12 +118,12 @@ async function refresh() {
     setup.hidden = ready;
     setup.textContent = authenticated ? "Complete setup ↗" : "Sign in to Excela ↗";
     document.getElementById("planner").textContent = ready ? `Connected · ${session.sheet.title}` : authenticated ? "Complete your Excela setup to continue." : "Sign in to Excela to continue.";
-    renderJob(authenticated ? result.job : null);
-    if (busy) timer = setTimeout(pollJob, 1000);
+    renderJob(authenticated ? result.job : null, result.transcript);
+    if (busy) timer = setTimeout(pollJob, 900);
   } catch (error) {
     if (id !== refreshId) return;
     ready = false;
-    renderJob({ failed: true, message: error.message });
+    renderJob({ failed: true, message: error.message }, []);
     setup.hidden = false;
     document.getElementById("planner").textContent = "Could not connect";
     document.getElementById("retry").hidden = false;
@@ -125,13 +132,13 @@ async function refresh() {
   }
 }
 
-// Poll memory in the background, not the database, while a job is running.
+// Poll memory in the background, not the database, while a reply is in flight.
 async function pollJob() {
   try {
     const result = await send({ type: "job" });
     if (result.error) throw new Error(result.error);
-    renderJob(result.job);
-    if (busy) timer = setTimeout(pollJob, 1000);
+    renderJob(result.job, result.transcript);
+    if (busy) timer = setTimeout(pollJob, 900);
   } catch (error) {
     renderJob({ failed: true, message: error.message });
     document.getElementById("retry").hidden = false;
@@ -145,7 +152,7 @@ async function prepare() {
     const snapshot = await send({ type: "snapshot" });
     if (id !== refreshId) return;
     canCompose = Boolean(snapshot.canCompose);
-    renderJob(snapshot.job);
+    renderJob(snapshot.job, snapshot.transcript);
     if (canCompose) {
       document.getElementById("planner").textContent = "Start typing — connecting in the background…";
       field.focus();
@@ -156,22 +163,41 @@ async function prepare() {
 
 document.getElementById("form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!ready || busy || sending || readingImage || checking || (!field.value.trim() && !image)) return;
+  const text = field.value.trim();
+  if (!ready || busy || sending || checking || !text) return;
   sending = true;
   clearTimeout(timer);
-  renderJob({ busy: true, message: "Starting…" });
+  const pageContext = includePage.checked && activeTab ? activeTab : null;
+  field.value = "";
+  includePage.checked = false;
+  renderJob({ busy: true, message: "" });
   try {
-    const result = await send({ type: "inject", text: field.value.trim(), pipeline: pipeline.value, ...(image ? { image } : {}) });
+    const result = await send({ type: "send", text, pageContext });
     if (result.error) throw new Error(result.error);
-    renderJob(result.job);
-    timer = setTimeout(pollJob, 1000);
-  } catch (error) { renderJob({ failed: true, message: error.message }); }
-  finally { sending = false; updateControls(); }
+    renderJob(result.job, result.transcript);
+    timer = setTimeout(pollJob, 900);
+  } catch (error) {
+    field.value = text; // Give the message back so nothing typed is lost.
+    renderJob({ failed: true, message: error.message });
+  } finally { sending = false; updateControls(); }
 });
+field.addEventListener("input", updateControls);
 field.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     document.getElementById("form").requestSubmit();
+  }
+});
+newChatButton.addEventListener("click", async () => {
+  if (busy) return;
+  try {
+    const result = await send({ type: "reset" });
+    if (result.error) throw new Error(result.error);
+    renderTranscript(result.transcript || []);
+    status.textContent = "";
+  } catch (error) {
+    status.textContent = error.message;
+    status.dataset.error = "true";
   }
 });
 setup.addEventListener("click", () => send({ type: "open", setup: authenticated }));
@@ -185,7 +211,7 @@ sitePicker.addEventListener("change", async () => {
   authenticated = false;
   checking = true;
   field.value = "";
-  removeImage.click();
+  includePage.checked = false;
   setup.hidden = true;
   document.getElementById("planner").textContent = "Connecting to Excela…";
   try { await browser.storage.local.set({ site }); }
@@ -198,6 +224,7 @@ async function initialize() {
     if (["https://excela.cfat.site", "https://localhost:3000"].includes(saved.site)) site = saved.site;
   } catch { /* Default to the live site. */ }
   sitePicker.value = site;
+  void captureActiveTab();
   await prepare();
 }
 void initialize();

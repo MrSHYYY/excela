@@ -1,33 +1,29 @@
 # Excela Firefox extension
 
-The popup calls Excela directly. No website or Google Sheets tab needs to stay open. It supports text and Ctrl+V image pasting (one PNG, JPEG or WebP up to 3 MB).
+The popup is a compact chat with your Excela planner agent. No website or Google Sheets tab needs to stay open.
 
-## Update from the tab-based version
+## Update from the extraction/Inject version
 
-1. Deploy the accompanying website changes: `lib/auth.ts`, the AI/sync routes, and the new `/api/extension/session` route. Live mode requires this deployment; reloading only the extension is not enough.
-2. In Firefox, open `about:debugging#/runtime/this-firefox` and reload the add-on. If Firefox cannot apply the manifest version/permission changes, remove it and use **Load Temporary Add-on** to select this folder's `manifest.json` again.
+1. This version talks to `/api/agent` (Excela Smart) instead of `/api/ai` + `/api/sync`. Deploy the current website first; older deployments without `/api/agent` will fail with a clear error.
+2. In Firefox, open `about:debugging#/runtime/this-firefox` and reload the add-on. If Firefox cannot apply the manifest version/permission changes (this version adds `activeTab` for the optional page-context toggle), remove it and use **Load Temporary Add-on** to select this folder's `manifest.json` again.
 3. Approve access to cookies for the two Excela sites. Open the popup and choose **Live** (`https://excela.cfat.site`, default) or **Local** (`https://localhost:3000`). For Local, run the existing HTTPS development server and trust its local certificate in Firefox.
-4. Sign in and complete setup through the website once in the same normal Firefox profile. You may then close every Excela/Sheets tab. A Chrome, private-window, or container-specific login is not used by this version.
-5. Type or paste a screenshot and press Enter / Inject. Shift+Enter adds a new line. Signed-out users see a sign-in prompt instead of input fields.
+4. Sign in and complete setup through the website once in the same normal Firefox profile. You may then close every Excela/Sheets tab.
+5. Type a message and press Enter, or the send button. Shift+Enter adds a new line. Signed-out or not-yet-set-up users see a sign-in/setup prompt instead of the chat.
 
 There is no extension build step. Temporary add-ons are removed when Firefox restarts; load the manifest again until the extension is signed for permanent installation.
 
 ## Behavior
 
-- To reverse completion, use `unmark today`, `unmark yesterday`, `unmark sept 25`, or `unmark 24`. Only nonempty cells with Excela's completed dark-blue fill return to pending red with white text. A bare day uses the current month. Empty cells, red tasks, and other colors are untouched; `unmark` without a date is declined.
-
-- Completion commands work in both General and Academic: `clear today`, `clear yesterday`, `clear sept 25`, `clear 24`, or `mark today's schedule clear`. A bare day uses the current month for completion. Only nonempty red event cells are formatted dark blue with white text; text is preserved. Empty days and already-completed tasks are unchanged. Deploy the matching AI/sync changes and reload the extension to enable this action. Messages go to AI without the former keyword filter; the backend still validates permitted actions and dates.
-
+- Ask naturally: "What do I have today?", "What's on tomorrow?", "Add CSE340 quiz Friday at 10am", "Find my CSE340 quiz". The popup shows Excela's actual reply, plus small chips naming any planner tool it used (e.g. `get_today_schedule`, `create_event`) so it's clear when something in your sheet actually changed versus when it was just answering a question.
+- **Include this page**: an optional checkbox that attaches the current tab's title and URL to your next message (for example, an assignment page), so you can say "add this to my planner" while looking at it. It captures only the title and URL via the `activeTab` permission — never the page's content — and only when you check the box for that message. It's unavailable on browser-internal pages.
+- **New chat** (the ＋ button) clears the conversation shown in the popup and the history sent to the agent. Nothing in your planner is undone by this — it only resets the conversation.
+- Conversation history is kept in the background's memory only (never written to disk), per selected site, and is cleared automatically if the signed-in Excela account changes, so one Google account can never see another's chat.
 - First install opens the website for onboarding. Subsequent popup opens create no tabs. Only explicit sign-in/setup or website buttons open a tab.
-- Sign-in is checked through the existing `excela_session` cookie using Firefox's privileged cookies API. It is sent only to the selected Excela origin as a bearer token, never to AI providers or to the popup. The server verifies its hash, expiration, and account on each AI/sync request. Invalid bearer headers never fall back to cookie authentication. Website cookie requests retain their origin checks.
-- The API key stays encrypted in the account database. The extension stores only the selected site preference on disk. Account status is cached in background memory for up to 60 seconds, invalidated by login-cookie changes; injection routes always authenticate on the server.
-- A local login-cookie check shows the editable input immediately for returning users, while account/setup validation runs in the background. You can type or paste an image during this check; Inject remains disabled until validation completes. Confirmed signed-out users see the sign-in prompt. Connection failures preserve the current draft. Account lookups start on extension startup and login changes, with duplicate lookups combined; job progress polls background memory without repeatedly querying the database.
-- Firefox desktop Manifest V2 provides a persistent background page, allowing injection to continue when the popup or website tabs close. Closing Firefox or reloading/removing the extension interrupts background work; check the sheet before retrying an interrupted write.
-- Events go to the planner selected in setup, never an arbitrary currently open sheet. Live and Local never fall back to one another. Switching clears the draft/image. Drafts and images disappear when the popup closes.
-- Website sessions still expire normally. Sign out on the website to revoke the corresponding session. After changing setup, account labels may take up to a minute to refresh, but the server uses the current saved planner and key.
-
-Only the two listed HTTPS hosts are allowed. Firefox match patterns cannot restrict localhost ports, so the code allows only port 3000. No tab scripting, content scripts, or Sheets-page access is used.
+- Sign-in is checked through the existing `excela_session` cookie using Firefox's privileged cookies API. It is sent only to the selected Excela origin as a bearer token, never to the AI provider or to the popup. The server verifies its hash, expiration, and account on each request.
+- The Ollama API key stays encrypted in the account database and is never sent to or stored by the extension. The extension stores only the selected site preference on disk. Account status is cached in background memory for up to 60 seconds, invalidated by login-cookie changes.
+- Firefox desktop Manifest V2 provides a persistent background page, so a reply keeps coming even if you close the popup. Closing Firefox or reloading/removing the extension interrupts it; reopen the popup afterward to see what did or didn't complete.
+- Only the two listed HTTPS hosts are allowed. Firefox match patterns cannot restrict localhost ports, so the code allows only port 3000. No content scripts or Sheets-page access are used; the page-context feature reads only `tab.title`/`tab.url` through `activeTab`.
 
 ## Release status
 
-This is an unsigned Firefox desktop add-on. Public distribution still requires Mozilla privacy/data-transmission declarations, validation, and signing. No Chrome compatibility is claimed. Runtime checks and live AI calls require the project owner's approval.
+This is an unsigned Firefox desktop add-on. Public distribution still requires Mozilla privacy/data-transmission declarations, validation, and signing. Runtime checks and live AI calls require the project owner's approval.

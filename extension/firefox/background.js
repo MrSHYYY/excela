@@ -1,10 +1,14 @@
-// Persistent Firefox background: jobs survive popup/tab closure (not browser shutdown).
-// Only the site preference is saved to disk. Tokens and jobs stay in memory.
+// Persistent Firefox background: a chat turn survives popup/tab closure (not browser shutdown).
+// Only the site preference is saved to disk. Tokens, jobs, and conversation history stay in memory
+// only — never written to disk, and cleared whenever the signed-in account changes.
 const SITES = ["https://excela.cfat.site", "https://localhost:3000"];
 const accounts = new Map();
 const accountRequests = new Map();
 const jobs = new Map();
+// One active conversation per site: { token, history (raw API messages), transcript (for the popup UI) }.
+const conversations = new Map();
 const emptyJob = () => ({ busy: false, failed: false, message: "" });
+const MAX_TRANSCRIPT = 40;
 
 async function sessionToken(site) {
   const cookie = await browser.cookies.get({ url: `${site}/`, name: "excela_session" });
@@ -16,12 +20,11 @@ async function request(site, token, path, body) {
     method: body ? "POST" : "GET", credentials: "omit", redirect: "error", cache: "no-store",
     headers: { Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
-    signal: AbortSignal.timeout(body ? 90000 : 15000),
+    signal: AbortSignal.timeout(body ? 65000 : 15000),
   });
   if (response.status === 404 && path === "/api/extension/session") {
     throw new Error("Deploy the updated Excela website first. This extension needs the new extension session endpoint.");
   }
-  if (response.status === 413) throw new Error("The attachment is too large. Try a smaller image.");
   if (!response.headers.get("content-type")?.includes("application/json")) {
     throw new Error("Excela returned an unexpected page. Check the selected site and deploy the updated website.");
   }
@@ -59,35 +62,52 @@ async function warmAccount(site) {
   catch { /* The popup shows connection errors when opened; never open a tab here. */ }
 }
 
-async function inject(site, token, message, job) {
-  let writing = false;
+function conversationFor(site, token) {
+  const existing = conversations.get(site);
+  if (existing?.token === token) return existing;
+  const fresh = { token, history: [], transcript: [] };
+  conversations.set(site, fresh);
+  return fresh;
+}
+
+function pushTranscript(conversation, entry) {
+  conversation.transcript.push(entry);
+  if (conversation.transcript.length > MAX_TRANSCRIPT) conversation.transcript.splice(0, conversation.transcript.length - MAX_TRANSCRIPT);
+}
+
+async function chat(site, token, text, pageContext, job) {
   try {
     const session = await account(site, token);
     if (!session.authenticated) throw new Error("Sign in to Excela first.");
     if (!session.sheet || !session.hasApiKey || !session.googleAccess) throw new Error("Complete setup on Excela first.");
+    const conversation = conversationFor(site, token);
+    pushTranscript(conversation, { role: "user", text, page: pageContext ? { title: pageContext.title, url: pageContext.url } : null });
+
+    const outgoing = pageContext
+      ? `Page open in the browser: "${pageContext.title}" (${pageContext.url})\n\n${text}`
+      : text;
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const data = await request(site, token, "/api/ai", { message: message.text, pipeline: message.pipeline, today, ...(message.image ? { image: message.image } : {}) });
-    const events = data.response?.events;
-    const action = data.response?.action;
-    const completionDate = ["complete_day", "uncomplete_day"].includes(action) && typeof data.response.date === "string" ? data.response.date : null;
-    if (!completionDate && (!Array.isArray(events) || !events.length)) {
-      job.message = "Declined — no supported planner action found. Nothing changed.";
-      return;
-    }
+    const data = await request(site, token, "/api/agent", {
+      messages: [...conversation.history, { role: "user", content: outgoing }],
+      today,
+    });
     if (await sessionToken(site) !== token) throw new Error("Your login changed. Sign in and try again.");
-    job.message = completionDate ? (action === "uncomplete_day" ? "Marking completed tasks pending…" : "Marking pending tasks complete…") : "Writing to your planner…";
-    writing = true;
-    const result = await request(site, token, "/api/sync", completionDate ? { action, date: completionDate } : { action: "add_events", events });
-    job.message = completionDate
-      ? action === "uncomplete_day"
-        ? (result.uncompleted ? `Marked pending: ${result.uncompleted} task(s) on ${completionDate}.` : `No completed blue tasks on ${completionDate}. Nothing changed.`)
-        : (result.completed ? `Completed: ${result.completed} task(s) on ${completionDate}.` : `No pending red tasks on ${completionDate}. Nothing changed.`)
-      : `Injected: ${result.written} event(s) written, ${result.skipped} already present.`;
+    conversation.history = Array.isArray(data.history) ? data.history : conversation.history;
+    pushTranscript(conversation, {
+      role: "assistant",
+      text: data.reply || "",
+      tools: Array.isArray(data.toolCalls) ? data.toolCalls : [],
+    });
+    job.message = "";
   } catch (error) {
+    const conversation = conversationFor(site, token);
+    pushTranscript(conversation, { role: "assistant", text: error.message || "Excela could not reply. Please try again.", error: true });
     job.failed = true;
-    job.message = (error.message || "Injection failed.") + (writing ? " Check your sheet before retrying." : "");
-  } finally { job.busy = false; }
+    job.message = error.message || "Excela could not reply.";
+  } finally {
+    job.busy = false;
+  }
 }
 
 browser.cookies.onChanged.addListener(({ cookie, removed }) => {
@@ -95,6 +115,7 @@ browser.cookies.onChanged.addListener(({ cookie, removed }) => {
   for (const site of SITES) {
     if (new URL(site).hostname === cookie.domain.replace(/^\./, "")) {
       accounts.delete(site);
+      conversations.delete(site); // Never let one Google account see another's chat history.
       if (!jobs.get(site)?.busy) jobs.delete(site);
       if (!removed) void warmAccount(site);
     }
@@ -119,23 +140,29 @@ browser.runtime.onMessage.addListener((message, sender) => {
       const currentJob = jobs.get(site);
       const job = currentJob?.token === token ? currentJob : emptyJob();
       const publicJob = () => ({ busy: job.busy, failed: job.failed, message: job.message });
-      // Local-only snapshot: allow drafting before the network account check finishes.
-      if (message.type === "snapshot") return { canCompose: Boolean(token), job: publicJob() };
-      if (message.type === "job") return { job: publicJob() };
-      if (message.type === "status") return { session: await account(site, token), job: publicJob() };
-      if (message.type !== "inject") throw new Error("Unknown command.");
+      const transcriptFor = () => conversationFor(site, token).transcript;
+      // Local-only snapshot: allow the chat to render before the network account check finishes.
+      if (message.type === "snapshot") return { canCompose: Boolean(token), job: publicJob(), transcript: token ? transcriptFor() : [] };
+      if (message.type === "job") return { job: publicJob(), transcript: transcriptFor() };
+      if (message.type === "status") return { session: await account(site, token), job: publicJob(), transcript: transcriptFor() };
+      if (message.type === "reset") {
+        if (!token) throw new Error("Sign in to Excela first.");
+        conversations.delete(site);
+        return { transcript: [] };
+      }
+      if (message.type !== "send") throw new Error("Unknown command.");
       if (!token) throw new Error("Sign in to Excela first.");
-      if (currentJob?.busy) return { error: "An injection is already running. Wait for it to finish." };
-      if (message.image && (!["image/png", "image/jpeg", "image/webp"].includes(message.image.mimeType) || typeof message.image.data !== "string" || !message.image.data.length || message.image.data.length > 4 * 1024 * 1024)) {
-        throw new Error("Paste one PNG, JPEG or WebP image up to 3 MB.");
+      if (currentJob?.busy) return { error: "Excela is still replying. Wait for that to finish." };
+      if (typeof message.text !== "string" || !message.text.trim() || message.text.length > 4000) {
+        throw new Error("Enter a message up to 4,000 characters.");
       }
-      if (typeof message.text !== "string" || (!message.text.trim() && !message.image) || message.text.length > 20000 || !["general", "academic"].includes(message.pipeline)) {
-        throw new Error("Enter a message or paste an image.");
-      }
-      const nextJob = { token, busy: true, failed: false, message: "Reading your announcement…" };
+      const pageContext = message.pageContext && typeof message.pageContext.title === "string" && typeof message.pageContext.url === "string"
+        ? { title: message.pageContext.title.slice(0, 300), url: message.pageContext.url.slice(0, 2000) }
+        : null;
+      const nextJob = { token, busy: true, failed: false, message: "" };
       jobs.set(site, nextJob);
-      void inject(site, token, message, nextJob);
-      return { job: { busy: true, failed: false, message: nextJob.message } };
+      void chat(site, token, message.text.trim(), pageContext, nextJob);
+      return { job: { busy: true, failed: false, message: "" }, transcript: transcriptFor() };
     } catch (error) {
       return { error: error.message || "Could not connect to Excela. Check the selected site and try again." };
     }
