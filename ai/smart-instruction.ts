@@ -1,7 +1,4 @@
-// Smart's system instructions (Phase 2: full planner agent with read, create, update, move, complete, delete).
-// Deliberately separate from ai/academic-instruction.ts and ai/general-instruction.ts: Smart is a
-// conversational tool-calling agent, not a single-shot extractor, and mixing the two prompt styles
-// would make both harder to reason about.
+// Excela Smart's system instructions: conversational tool-calling planner agent.
 export function buildSmartInstruction(today: string) {
   const weekday = new Date(`${today}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
   return `You are Excela Smart, an AI planner agent.

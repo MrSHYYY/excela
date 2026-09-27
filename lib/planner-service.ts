@@ -1,13 +1,10 @@
-// Reusable planner service: reads/writes the authenticated user's Google Sheets planner.
-// Extracted from app/api/sync/route.ts (Phase 1 of the Smart agent roadmap). This module intentionally
-// preserves the exact layout, duplicate, and color rules already in production:
+// Planner service: reads and writes the authenticated user's Google Sheets planner.
+// Preserves layout, duplicate, and color rules:
 //   - month tabs matched by lib/sheet.ts's monthTabPattern
 //   - day numbers read from column D, rows 3..45
 //   - four event slots per day in columns E..H
 //   - added text is uppercased; duplicates are same-day case-insensitive text matches
 //   - "pending" = red fill (#991b1b-family); "completed" = the exact blue #1e3a8a
-// app/api/sync/route.ts is NOT changed by this file and keeps working standalone; Smart's tools call
-// the functions here instead of duplicating cell-level logic.
 import { GoogleAccessError, googleAccessToken } from "@/ai/google-auth";
 import type { UserDoc } from "@/lib/models";
 import { monthTabPattern } from "@/lib/sheet";
@@ -237,8 +234,8 @@ export async function findEvents(user: UserDoc, query: string, from: string, to:
 export type CreateEventResult = { status: "created" | "duplicate"; date: string; label: string; cell?: string; sheetId?: number; rowIndex?: number; link?: string };
 
 /**
- * Adds one event to the first empty slot on `date`, reusing the exact rules app/api/sync/route.ts uses
- * for a single add_events item: uppercase "COURSE TITLE" label, E→F→G→H slot order, same-day
+ * Adds one event to the first empty slot on `date`:
+ * uppercase "COURSE TITLE" label, E→F→G→H slot order, same-day
  * case-insensitive duplicate skipping, dark-red fill with white text. Throws PlannerError, including
  * "day_full" when all four slots are occupied and "no_month_tab" when no matching tab exists yet.
  */

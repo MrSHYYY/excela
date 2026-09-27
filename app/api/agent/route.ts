@@ -1,11 +1,10 @@
 import { getSessionUser, isPlannerRequest } from "@/lib/auth";
 import { decrypt } from "@/lib/crypto";
 import { normalizeOllamaKey } from "@/lib/ollama-key";
-import { parseToday } from "@/ai/pipelines";
+import { parseToday } from "@/lib/agent/dates";
 import { AgentError, runSmartAgent, type AgentMessage } from "@/lib/agent/agent";
 
-// Phase 5 of the Smart roadmap: a dedicated agent endpoint, separate from /api/ai (single-shot
-// extraction) and /api/sync (direct planner writes). The client sends conversation messages; the
+// Dedicated agent endpoint for Excela Smart. The client sends conversation messages; the
 // authenticated user, their planner, and their Ollama key are all resolved server-side.
 export const maxDuration = 60;
 
