@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import styles from "./dashboard.module.css";
-import publicStyles from "./public.module.css";
 import Landing from "./landing";
 import PageSkeleton from "./page-skeleton";
 import PendingLink from "./pending-link";
-import { SIGN_IN_CHANNEL, startGoogleSignIn } from "./google-sign-in";
+import { startGoogleSignIn } from "./google-sign-in";
+import { useAuth } from "./auth-context";
 import type { Session } from "@/lib/session-payload";
 import type { AgentMessage } from "@/lib/agent/agent";
 
@@ -18,8 +17,6 @@ type SmartChatMessage = {
   content: string;
 };
 
-// The user's local calendar date (YYYY-MM-DD). Sent with each request so the AI can resolve
-// "today", "tomorrow", "yesterday" and similar words against the right day.
 function localToday() {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -34,20 +31,14 @@ const signInMessages: Record<string, string> = {
   failed: "Google sign-in failed. Check the OAuth credentials and the registered redirect URL.",
 };
 
-// `initialSession` comes from the server, so the right screen shows on the first paint.
-// It is null only when the database could not be reached; then the browser asks again.
 export default function HomeClient({ initialSession }: { initialSession: Session | null }) {
-  const [error, setError] = useState("");
-  const [session, setSession] = useState<Session | null>(initialSession);
-  const [resolvingSignIn, setResolvingSignIn] = useState(false);
-  const [notice, setNotice] = useState("");
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const { session: currentSession, setSession } = useAuth();
+  const session = currentSession !== null ? currentSession : initialSession;
 
-  // Smart Chat state (browser-session lifetime; resets on browser refresh)
+  const [error, setError] = useState("");
+  const notice = "";
+
+  // Smart Chat state
   const [smartChat, setSmartChat] = useState<SmartChatMessage[]>([]);
   const [smartHistory, setSmartHistory] = useState<AgentMessage[]>([]);
   const [smartInput, setSmartInput] = useState("");
@@ -73,6 +64,30 @@ export default function HomeClient({ initialSession }: { initialSession: Session
   useEffect(() => {
     smartInputRef.current?.focus();
   }, []);
+
+  // Handle query param errors from Google OAuth callback
+  useEffect(() => {
+    let active = true;
+    const status = new URLSearchParams(window.location.search).get("google");
+    if (status) {
+      window.history.replaceState(null, "", window.location.pathname);
+      if (status !== "connected") {
+        queueMicrotask(() => {
+          if (active) setError(signInMessages[status] || "Please sign in with Google again.");
+        });
+      }
+    }
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function handleAuthCode(code?: string) {
+    if (code === "auth") setSession({ authenticated: false });
+    if (code === "reauth") setSession((current) => (current?.authenticated ? { ...current, googleAccess: false } : current));
+    if (code === "no_sheet") setSession((current) => (current?.authenticated ? { ...current, sheet: null } : current));
+    if (code === "setup_required") setSession((current) => (current?.authenticated ? { ...current, hasApiKey: false } : current));
+  }
 
   async function handleSmartSend(textToSend?: string) {
     const raw = typeof textToSend === "string" ? textToSend : smartInput;
@@ -126,465 +141,173 @@ export default function HomeClient({ initialSession }: { initialSession: Session
     }
   }
 
-  useEffect(() => {
-    if (!sidebarOpen) return;
-    function closeSidebar(event: KeyboardEvent) {
-      if (event.key === "Escape") setSidebarOpen(false);
-    }
-    document.addEventListener("keydown", closeSidebar);
-    return () => document.removeEventListener("keydown", closeSidebar);
-  }, [sidebarOpen]);
-
-  useEffect(() => {
-    let active = true;
-    const status = new URLSearchParams(window.location.search).get("google");
-    if (status) {
-      window.history.replaceState(null, "", window.location.pathname);
-      if (status !== "connected") {
-        queueMicrotask(() => {
-          if (active) setError(signInMessages[status] || "Please sign in with Google again.");
-        });
-      }
-    }
-    async function loadSession() {
-      // When the server already told us who is signed in, this is a quiet background refresh
-      // (it renews the session and picks up changes); a failure must not kick anyone out.
-      const quiet = initialSession !== null;
-      try {
-        const result = await fetch("/api/google/status", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
-        const data = await result.json();
-        if (!active) return;
-        if (!result.ok) {
-          if (quiet) return;
-          setError(data.error || "Could not load your session.");
-          setSession({ authenticated: false });
-          return;
-        }
-        setSession(data);
-      } catch {
-        if (!active || quiet) return;
-        setError("Could not load your session. Check your connection and refresh.");
-        setSession({ authenticated: false });
-      }
-    }
-    // The server already said nobody is signed in: nothing to fetch.
-    if (!initialSession?.authenticated && initialSession !== null) return;
-    void loadSession();
-    return () => { active = false; };
-  }, [initialSession]);
-
-  // The sign-in popup reports the result here once Google sends the user back to Excela.
-  useEffect(() => {
-    if (typeof BroadcastChannel === "undefined") return;
-    const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
-    channel.onmessage = async (event: MessageEvent<{ status?: string }>) => {
-      const status = event.data?.status;
-      if (!status) return;
-      if (status !== "connected") {
-        setError(signInMessages[status] || "Please sign in with Google again.");
-        return;
-      }
-      setError("");
-      setNotice("");
-      setResolvingSignIn(true);
-      try {
-        const result = await fetch("/api/google/status", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
-        const data = await result.json();
-        if (result.ok) setSession(data);
-        else setError(data.error || "Could not load your session.");
-      } catch {
-        setError("Could not load your session. Check your connection and refresh.");
-      } finally {
-        setResolvingSignIn(false);
-      }
-    };
-    return () => channel.close();
-  }, []);
-
-  // Closes the settings menu on outside click or Escape.
-  useEffect(() => {
-    if (!menuOpen) return;
-    function closeMenu() {
-      setMenuOpen(false);
-      setConfirmingDelete(false);
-    }
-    function onPointerDown(event: MouseEvent) {
-      if (!menuRef.current?.contains(event.target as Node)) closeMenu();
-    }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") closeMenu();
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [menuOpen]);
-
-  // Keeps the UI in step with what the server says about the session.
-  function handleAuthCode(code?: string) {
-    if (code === "auth") setSession({ authenticated: false });
-    if (code === "reauth") setSession((current) => (current?.authenticated ? { ...current, googleAccess: false } : current));
-    if (code === "no_sheet") setSession((current) => (current?.authenticated ? { ...current, sheet: null } : current));
-    if (code === "setup_required") setSession((current) => (current?.authenticated ? { ...current, hasApiKey: false } : current));
-  }
-
-  async function handleSignOut() {
-    try { await fetch("/api/auth/logout", { method: "POST" }); }
-    catch { /* The server-side session expires on its own if this fails. */ }
-    setSession({ authenticated: false });
-    setNotice("");
-    setConfirmingDelete(false);
-    setMenuOpen(false);
-    setSidebarOpen(false);
-    setError("");
-  }
-
-  async function handleDeleteAccount() {
-    if (deleting) return;
-    setDeleting(true);
-    setError("");
-    try {
-      const result = await fetch("/api/account", { method: "DELETE" });
-      const data = await result.json();
-      if (!result.ok) {
-        handleAuthCode(data.code);
-        throw new Error(data.error || "Unable to delete your account.");
-      }
-      setSession({ authenticated: false });
-      setConfirmingDelete(false);
-      setMenuOpen(false);
-      setNotice("Your account and all data Excela stored about you were deleted.");
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Unable to delete your account.");
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  if (resolvingSignIn || session === null) return <PageSkeleton />;
+  if (session === null) return <PageSkeleton />;
 
   if (!session.authenticated) {
-    return <Landing pending={session === null} error={error} notice={notice} />;
+    return <Landing pending={false} error={error} notice={notice} />;
   }
 
   const setupComplete = Boolean(session.sheet && session.hasApiKey);
 
   return (
-    <div className={styles.dashboard} data-sidebar-open={sidebarOpen}>
-      <a href="#dashboard-content" className={styles.skip}>Skip to dashboard</a>
-      <header className={styles.navbar}>
-        <nav className={styles.navigation} aria-label="Main navigation">
-          <Link href="/" className={publicStyles.brand} aria-label="Excela home">
-            <Image src="/excela-r.png" alt="" width={34} height={34} priority />
-            excela<span className={publicStyles.brandDot}>.</span>
-          </Link>
-          <button
-            type="button"
-            className={styles.menuToggle}
-            aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-            aria-expanded={sidebarOpen}
-            aria-controls="dashboard-sidebar"
-            onClick={() => setSidebarOpen((open) => !open)}
+    <div className={styles.content}>
+      {error && <p role="alert" className={styles.error}>{error}</p>}
+      {notice && <p role="status" className={styles.notice}>{notice}</p>}
+      {!session.googleAccess && (
+        <p role="alert" className={styles.warning}>
+          Reconnect Google to access your planner.{" "}
+          <a
+            href="/api/google/connect?consent=1"
+            onClick={(event) => {
+              event.preventDefault();
+              startGoogleSignIn(true);
+            }}
           >
-            <span /><span /><span />
-          </button>
-        </nav>
-        <span className={styles.navTitle}>Your workspace</span>
-        <div className={styles.account}>
-          <div className={styles.identity}>
-            {session.user.picture && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={session.user.picture}
-                alt=""
-                width={36}
-                height={36}
-                referrerPolicy="no-referrer"
-                className="h-9 w-9 rounded-full"
-              />
-            )}
-            <div className={styles.identityText}>
-              <p className="font-medium">{session.user.name}</p>
-              <p className="text-zinc-400 dark:text-zinc-400">{session.user.email}</p>
+            Sign in with Google again ↗
+          </a>
+        </p>
+      )}
+
+      <div className={styles.workspaceGate}>
+        <div
+          className={`${styles.workspace} ${styles.smartWorkspace}`}
+          data-locked={!setupComplete}
+          inert={!setupComplete}
+          aria-hidden={!setupComplete}
+        >
+          <section className={styles.smartPanel} aria-labelledby="smart-heading">
+            <div className={styles.tabBar}>
+              <div className={styles.smartHeaderTitle}>
+                <h2 id="smart-heading">Excela</h2>
+                <span className={styles.smartBadge}>Planner Agent</span>
+              </div>
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            {session.sheet && (
-              <a
-                href="/api/sheet/open"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(event) => {
-                  // Pass the browser's local month so it matches the user's time zone.
-                  event.preventDefault();
-                  const now = new Date();
-                  window.open(
-                    `/api/sheet/open?y=${now.getFullYear()}&m=${now.getMonth() + 1}`,
-                    "_blank",
-                    "noopener,noreferrer",
-                  );
-                }}
-                className={styles.sheetLink}
-                aria-label="View your sheet"
-              >
-                <svg className={styles.sheetIcon} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>
-                <span className={styles.sheetLabel}>View your sheet</span>
-              </a>
-            )}
-            <div ref={menuRef} className="relative">
-              <button
-                type="button"
-                aria-label="Settings"
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                onClick={() => {
-                  setMenuOpen((open) => !open);
-                  setConfirmingDelete(false);
-                }}
-                className="rounded-lg border border-zinc-700 p-2 hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-700 dark:hover:bg-zinc-800"
-              >
-                <svg
-                  aria-hidden="true"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth={1.5}
-                  stroke="currentColor"
-                  className="h-5 w-5"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.826a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z"
-                  />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                </svg>
-              </button>
-              {menuOpen && (
-                <div
-                  role="menu"
-                  aria-label="Account settings"
-                  className="absolute right-0 top-full z-10 mt-2 w-72 rounded-xl border border-zinc-800 bg-zinc-900 p-2 shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
-                >
-                  {confirmingDelete ? (
-                    <div className="flex flex-col gap-3 p-2">
-                      <p role="alert" className="text-sm font-medium text-red-400 dark:text-red-400">
-                        Delete your account?
-                      </p>
-                      <p className="text-sm text-zinc-400 dark:text-zinc-400">
-                        This permanently deletes your Excela account and everything Excela stores about you: your
-                        profile, saved planner link, Google access and sign-in sessions. Your Google Sheets are not
-                        changed or deleted. This cannot be undone.
-                      </p>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={handleDeleteAccount}
-                          disabled={deleting}
-                          className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {deleting ? "Deleting…" : "Yes, delete everything"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmingDelete(false)}
-                          disabled={deleting}
-                          className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium hover:bg-zinc-800 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                        >
-                          Cancel
-                        </button>
+
+            <div className={styles.chatScroll} ref={chatScrollRef}>
+              {smartChat.length === 0 ? (
+                <div className={styles.chatEmptyState}>
+                  <div className={styles.chatEmptyIcon}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </div>
+                  <h3>Talk to Excela</h3>
+                  <p>Ask about your schedule, add assignments, reschedule dates, or complete tasks conversationally.</p>
+                  <div className={styles.chatSuggestions}>
+                    <button type="button" onClick={() => void handleSmartSend("What do I have today?")}>
+                      What do I have today?
+                    </button>
+                    <button type="button" onClick={() => void handleSmartSend("What's on this week?")}>
+                      What&apos;s on this week?
+                    </button>
+                    <button type="button" onClick={() => void handleSmartSend("What upcoming deadlines do I have?")}>
+                      Upcoming deadlines
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className={styles.chatList}>
+                  {smartChat.map((msg) => (
+                    <div key={msg.id} className={msg.role === "user" ? styles.userMessageRow : styles.assistantMessageRow}>
+                      <div className={msg.role === "user" ? styles.userBubble : styles.assistantBubble}>
+                        <div className={styles.bubbleAuthor}>
+                          {msg.role === "user" ? "You" : "Excela"}
+                        </div>
+                        <div className={styles.bubbleText}>
+                          {msg.content}
+                        </div>
                       </div>
                     </div>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={handleSignOut}
-                        className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium hover:bg-zinc-800 dark:hover:bg-zinc-800"
-                      >
-                        Sign out
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => setConfirmingDelete(true)}
-                        className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-red-400 hover:bg-red-950 dark:text-red-400 dark:hover:bg-red-950"
-                      >
-                        Delete account
-                      </button>
-                    </>
+                  ))}
+                  {smartLoading && (
+                    <div className={styles.assistantMessageRow}>
+                      <div className={`${styles.assistantBubble} ${styles.thinkingBubble}`}>
+                        <div className={styles.bubbleAuthor}>Excela</div>
+                        <div className={styles.thinkingText}>
+                          <span className={styles.thinkingDot} />
+                          <span className={styles.thinkingDot} />
+                          <span className={styles.thinkingDot} />
+                          <span style={{ marginLeft: "8px" }}>Thinking…</span>
+                        </div>
+                      </div>
+                    </div>
                   )}
+                  {smartError && (
+                    <div className={styles.chatError}>
+                      <span>{smartError}</span>
+                    </div>
+                  )}
+                  <div ref={chatMessagesEndRef} />
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      </header>
 
-      <aside id="dashboard-sidebar" aria-label="Sidebar" aria-hidden={!sidebarOpen} inert={!sidebarOpen} className={styles.sidebar}>
-        <nav aria-label="Planner settings" className={styles.sidebarNav}>
-          <PendingLink href="/setup" className={styles.sidebarAction}>Planner &amp; API settings ↗</PendingLink>
-          <PendingLink href="/telegram" className={styles.sidebarAction}>Telegram bot ↗</PendingLink>
-        </nav>
-      </aside>
-      {sidebarOpen && <button type="button" className={styles.backdrop} aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} />}
-
-      <main id="dashboard-content" className={styles.main}>
-        <div className={styles.content}>
-          {error && <p role="alert" className={styles.error}>{error}</p>}
-          {notice && <p role="status" className={styles.notice}>{notice}</p>}
-          {!session.googleAccess && (
-            <p role="alert" className={styles.warning}>
-              Reconnect Google to access your planner.{" "}
-              <a href="/api/google/connect?consent=1" onClick={(event) => { event.preventDefault(); startGoogleSignIn(true); }}>
-                Sign in with Google again ↗
-              </a>
-            </p>
-          )}
-
-          <div className={styles.workspaceGate}>
-            <div
-              className={`${styles.workspace} ${styles.smartWorkspace}`}
-              data-locked={!setupComplete}
-              inert={!setupComplete}
-              aria-hidden={!setupComplete}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleSmartSend();
+              }}
+              className={styles.chatForm}
             >
-              <section className={styles.smartPanel} aria-labelledby="smart-heading">
-                <div className={styles.tabBar}>
-                  <div className={styles.smartHeaderTitle}>
-                    <h2 id="smart-heading">Excela</h2>
-                    <span className={styles.smartBadge}>Planner Agent</span>
-                  </div>
-                </div>
-
-                <div className={styles.chatScroll} ref={chatScrollRef}>
-                  {smartChat.length === 0 ? (
-                    <div className={styles.chatEmptyState}>
-                      <div className={styles.chatEmptyIcon}>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                        </svg>
-                      </div>
-                      <h3>Talk to Excela</h3>
-                      <p>Ask about your schedule, add assignments, reschedule dates, or complete tasks conversationally.</p>
-                      <div className={styles.chatSuggestions}>
-                        <button type="button" onClick={() => void handleSmartSend("What do I have today?")}>
-                          What do I have today?
-                        </button>
-                        <button type="button" onClick={() => void handleSmartSend("What's on this week?")}>
-                          What&apos;s on this week?
-                        </button>
-                        <button type="button" onClick={() => void handleSmartSend("What upcoming deadlines do I have?")}>
-                          Upcoming deadlines
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className={styles.chatList}>
-                      {smartChat.map((msg) => (
-                        <div key={msg.id} className={msg.role === "user" ? styles.userMessageRow : styles.assistantMessageRow}>
-                          <div className={msg.role === "user" ? styles.userBubble : styles.assistantBubble}>
-                            <div className={styles.bubbleAuthor}>
-                              {msg.role === "user" ? "You" : "Excela"}
-                            </div>
-                            <div className={styles.bubbleText}>
-                              {msg.content}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      {smartLoading && (
-                        <div className={styles.assistantMessageRow}>
-                          <div className={`${styles.assistantBubble} ${styles.thinkingBubble}`}>
-                            <div className={styles.bubbleAuthor}>Excela</div>
-                            <div className={styles.thinkingText}>
-                              <span className={styles.thinkingDot} />
-                              <span className={styles.thinkingDot} />
-                              <span className={styles.thinkingDot} />
-                              <span style={{ marginLeft: "8px" }}>Thinking…</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      {smartError && (
-                        <div className={styles.chatError}>
-                          <span>{smartError}</span>
-                        </div>
-                      )}
-                      <div ref={chatMessagesEndRef} />
-                    </div>
-                  )}
-                </div>
-
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void handleSmartSend();
+              <div className={styles.chatInputWrapper}>
+                <textarea
+                  ref={smartInputRef}
+                  value={smartInput}
+                  onChange={(e) => setSmartInput(e.target.value)}
+                  onKeyDown={(event) => {
+                    const touchKeyboard = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+                    if (!touchKeyboard && event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
+                      event.preventDefault();
+                      event.currentTarget.form?.requestSubmit();
+                    }
                   }}
-                  className={styles.chatForm}
+                  placeholder={session?.sheet ? "Message Excela, e.g. \u2018add CSE340 quiz tomorrow at 10 AM\u2019 or \u2018what do I have today\u2019\u2026" : "Connect a planner to start chatting…"}
+                  rows={1}
+                  disabled={smartLoading || !session?.sheet || !session?.googleAccess}
+                  maxLength={4000}
+                  className={styles.chatTextarea}
+                />
+                <button
+                  type="submit"
+                  className={styles.chatSendButton}
+                  disabled={smartLoading || !smartInput.trim() || !session?.sheet || !session?.googleAccess}
+                  aria-label="Send message"
                 >
-                  <div className={styles.chatInputWrapper}>
-                    <textarea
-                      ref={smartInputRef}
-                      value={smartInput}
-                      onChange={(e) => setSmartInput(e.target.value)}
-                      onKeyDown={(event) => {
-                        const touchKeyboard = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
-                        if (!touchKeyboard && event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
-                          event.preventDefault();
-                          event.currentTarget.form?.requestSubmit();
-                        }
-                      }}
-                      placeholder={session?.sheet ? "Message Excela, e.g. \u2018add CSE340 quiz tomorrow at 10 AM\u2019 or \u2018what do I have today\u2019\u2026" : "Connect a planner to start chatting…"}
-                      rows={1}
-                      disabled={smartLoading || !session?.sheet || !session?.googleAccess}
-                      maxLength={4000}
-                      className={styles.chatTextarea}
-                    />
-                    <button
-                      type="submit"
-                      className={styles.chatSendButton}
-                      disabled={smartLoading || !smartInput.trim() || !session?.sheet || !session?.googleAccess}
-                      aria-label="Send message"
-                    >
-                      {smartLoading ? "…" : "Send ↗"}
-                    </button>
-                  </div>
-                  <p className={styles.chatHint}>
-                    {session?.sheet ? (
-                      <>
-                        <span className={styles.desktopKeyboardHint}>Press Enter to send · Shift+Enter for a new line.</span>
-                        <span className={styles.touchKeyboardHint}>Tap Send when ready.</span>
-                      </>
-                    ) : (
-                      "Connect or generate a planner to get started."
-                    )}
-                  </p>
-                </form>
-              </section>
-            </div>
-            {!setupComplete && (
-              <div className={styles.setupOverlay}>
-                <div className={styles.setupPrompt}>
-                  <h2>A little setup. Then you are ready.</h2>
-                  <p>Connect your planner and your personal Ollama API key.</p>
-                  <PendingLink href="/setup" className={styles.primary}>Complete setup ↗</PendingLink>
-                </div>
+                  {smartLoading ? "…" : "Send ↗"}
+                </button>
               </div>
-            )}
-          </div>
-          <footer className={styles.footer}>
-            <span>Your sheet. A little less to remember.</span>
-            <nav aria-label="Legal">
-              <Link href="/privacy">Privacy policy</Link>
-              <Link href="/terms">Terms of service</Link>
-            </nav>
-          </footer>
+              <p className={styles.chatHint}>
+                {session?.sheet ? (
+                  <>
+                    <span className={styles.desktopKeyboardHint}>Press Enter to send · Shift+Enter for a new line.</span>
+                    <span className={styles.touchKeyboardHint}>Tap Send when ready.</span>
+                  </>
+                ) : (
+                  "Connect or generate a planner to get started."
+                )}
+              </p>
+            </form>
+          </section>
         </div>
-      </main>
+
+        {!setupComplete && (
+          <div className={styles.setupOverlay}>
+            <div className={styles.setupPrompt}>
+              <h2>A little setup. Then you are ready.</h2>
+              <p>Connect your planner and your personal Ollama API key.</p>
+              <PendingLink href="/setup" className={styles.primary}>Complete setup ↗</PendingLink>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <footer className={styles.footer}>
+        <span>Your sheet. A little less to remember.</span>
+        <nav aria-label="Legal">
+          <Link href="/privacy">Privacy policy</Link>
+          <Link href="/terms">Terms of service</Link>
+        </nav>
+      </footer>
     </div>
   );
 }

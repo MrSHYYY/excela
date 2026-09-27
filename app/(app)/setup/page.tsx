@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { sessionPayload } from "@/lib/session-payload";
-import SetupClient from "../components/setup-client";
+import SetupClient from "@/app/components/setup-client";
 
 export const metadata: Metadata = { title: "Setup | Excela" };
 

@@ -1,123 +1,343 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eyebrow {
+  display: block;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  color: #8d8d87;
+  text-transform: uppercase;
+}
+
+.title {
+  font-size: clamp(26px, 3.2vw, 36px);
+  font-weight: 500;
+  letter-spacing: -1.2px;
+  color: #ededeb;
+  margin: 0;
+}
+
+.intro {
+  font-size: 15px;
+  line-height: 1.6;
+  color: #9c9c96;
+  max-width: 680px;
+  margin: 0;
+}
+
+.error,
+.notice {
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.error {
+  background: #211313;
+  border: 1px solid #4d2323;
+  color: #fca5a5;
+}
+
+.notice {
+  background: #141f14;
+  border: 1px solid #2d422a;
+  color: #bbf7d0;
+}
+
+/* ---------------- Connection Status Card ---------------- */
+.statusCard {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 28px;
+  border: 1px solid #282828;
+  border-radius: 14px;
+  background: #141414;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.statusCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #222222;
+  padding-bottom: 18px;
+}
+
+.botIdentity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.botIconWrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: #1a2536;
+  border: 1px solid #2b3e5a;
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.botName {
+  font-size: 18px;
+  font-weight: 600;
+  color: #f4f4f5;
+  margin: 0;
+}
+
+.botHandle {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  color: #71717a;
+  margin: 2px 0 0;
+}
+
 .statusBadge {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 6px 14px;
   border-radius: 9999px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  width: fit-content;
+  letter-spacing: 0.2px;
 }
 
 .statusConnected {
-  background: #182015;
-  color: #c9dfbd;
-  border: 1px solid #3b4b32;
+  background: #162015;
+  color: #bbf7d0;
+  border: 1px solid #2e432a;
 }
 
 .statusDisconnected {
-  background: #1f1f1f;
+  background: #1c1c1c;
   color: #a1a1aa;
   border: 1px solid #333333;
 }
 
 .statusDot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
 }
 
 .statusDotConnected {
   background: #4ade80;
-  box-shadow: 0 0 8px rgba(74, 222, 128, 0.4);
+  box-shadow: 0 0 10px #4ade80;
+  animation: pulseDot 2s infinite ease-in-out;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.2); }
 }
 
 .statusDotDisconnected {
   background: #71717a;
 }
 
-.detailsList {
+/* Connected Details */
+.connectedBody {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  margin: 12px 0;
-  padding: 16px;
-  background: #0d0d0d;
-  border: 1px solid #262626;
-  border-radius: 8px;
-  font-size: 14px;
+  gap: 20px;
 }
 
-.detailRow {
+.detailsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.detailCard {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: #d4d4d8;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: #0d0d0d;
+  border: 1px solid #242424;
+  border-radius: 10px;
 }
 
 .detailLabel {
+  font-size: 11px;
+  font-family: var(--font-geist-mono), monospace;
   color: #71717a;
-  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
 }
 
 .detailValue {
-  font-family: var(--font-geist-mono), monospace;
+  font-size: 15px;
+  font-weight: 500;
   color: #f4f4f5;
-  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.codeBox {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  width: 100%;
-  padding: 24px;
-  background: #0d0d0d;
-  border: 1px dashed #3f3f46;
-  border-radius: 10px;
-  margin: 16px 0;
-  text-align: center;
-}
-
-.codeDisplay {
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 32px;
-  font-weight: 700;
-  letter-spacing: 6px;
-  color: #f4f4f5;
-  padding: 8px 16px;
-  background: #18181b;
-  border: 1px solid #3f3f46;
-  border-radius: 8px;
-  user-select: all;
-}
-
-.codeActions {
-  display: flex;
-  flex-wrap: wrap;
+.connectedChecklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 10px;
-  justify-content: center;
-  width: 100%;
+  padding: 16px;
+  background: #0f160e;
+  border: 1px solid #20311d;
+  border-radius: 10px;
 }
 
-.instructionSteps {
+.checklistItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #c9dfbd;
+}
+
+.checkIcon {
+  color: #4ade80;
+  flex-shrink: 0;
+}
+
+.disconnectActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 10px;
+}
+
+.disconnectTextButton {
+  background: none;
+  border: none;
+  color: #ef4444;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+  padding: 6px 0;
+  transition: color 150ms ease;
+}
+
+.disconnectTextButton:hover {
+  color: #f87171;
+}
+
+.disconnectConfirmCard {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: 100%;
-  margin: 12px 0;
-  counter-reset: step-counter;
+  padding: 16px 20px;
+  background: #1f1212;
+  border: 1px solid #542222;
+  border-radius: 10px;
 }
 
-.instructionStep {
+.disconnectConfirmCard p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #fca5a5;
+}
+
+.disconnectConfirmButtons {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.btnDanger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  background: #dc2626;
+  color: #ffffff;
+  border: 1px solid #dc2626;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.btnDanger:hover:not(:disabled) {
+  background: #ef4444;
+}
+
+.btnSecondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  background: #222222;
+  color: #e4e4e7;
+  border: 1px solid #383838;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.btnSecondary:hover:not(:disabled) {
+  background: #2e2e2e;
+  border-color: #525252;
+}
+
+/* ---------------- Linking Flow ---------------- */
+.unconnectedBody {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.unconnectedIntro {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #a1a1aa;
+  margin: 0;
+}
+
+.stepsGuide {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 6px 0;
+}
+
+.stepCard {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  font-size: 14px;
-  color: #a1a1aa;
+  padding: 14px;
+  background: #0d0d0d;
+  border: 1px solid #262626;
+  border-radius: 10px;
+  font-size: 13px;
   line-height: 1.5;
+  color: #d4d4d8;
 }
 
 .stepNumber {
@@ -127,45 +347,257 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: #27272a;
-  color: #e4e4e7;
+  background: #242427;
+  border: 1px solid #3f3f46;
+  color: #f4f4f5;
   font-size: 12px;
   font-weight: 600;
   flex-shrink: 0;
 }
 
+.codeBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 28px 24px;
+  background: #0b0f0b;
+  border: 1px dashed #304a2e;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.codeLabel {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  color: #86a683;
+  text-transform: uppercase;
+}
+
+.codeDisplay {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: clamp(32px, 6vw, 44px);
+  font-weight: 700;
+  letter-spacing: 8px;
+  color: #ffffff;
+  padding: 8px 24px;
+  background: #141e13;
+  border: 1px solid #365533;
+  border-radius: 10px;
+  user-select: all;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.codeActions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.btnPrimary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: #edede7;
+  color: #111111;
+  border: 1px solid #edede7;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  min-height: 42px;
+  transition: all 150ms ease;
+}
+
+.btnPrimary:hover:not(:disabled) {
+  background: #dcdcd6;
+  border-color: #dcdcd6;
+}
+
+.btnPrimary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .pollingNotice {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 13px;
   color: #9ca3af;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
-.disconnectConfirm {
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #383838;
+  border-top-color: #4ade80;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------------- Command Capabilities Guide ---------------- */
+.capabilitiesSection {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  width: 100%;
-  padding: 16px;
-  background: #1c1111;
-  border: 1px solid #551c1c;
-  border-radius: 8px;
-  margin-top: 16px;
+  gap: 16px;
+  margin-top: 10px;
 }
 
-.dangerButton {
-  background: #991b1b;
-  color: #ffffff;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 6px;
+.sectionHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sectionTitle {
+  font-size: 20px;
   font-weight: 500;
-  font-size: 14px;
-  transition: background 0.15s ease;
+  letter-spacing: -0.6px;
+  color: #ededeb;
+  margin: 0;
 }
 
-.dangerButton:hover:not(:disabled) {
-  background: #b91c1c;
+.sectionIntro {
+  font-size: 14px;
+  color: #8e8e89;
+  margin: 0;
+}
+
+.commandsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 16px;
+}
+
+.commandCard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px;
+  background: #141414;
+  border: 1px solid #282828;
+  border-radius: 12px;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+.commandCard:hover {
+  border-color: #3d3d3d;
+}
+
+.commandCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.commandHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.commandIconBox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #1e1e1e;
+  border: 1px solid #333333;
+  color: #d1d5db;
+  flex-shrink: 0;
+}
+
+.commandBadge {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #172216;
+  border: 1px solid #2b4028;
+  color: #a7cf9f;
+  text-transform: uppercase;
+}
+
+.commandName {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+}
+
+.commandDesc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #a1a1aa;
+  margin: 0;
+}
+
+.commandExampleBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: #0d0d0d;
+  border: 1px solid #222222;
+  border-radius: 8px;
+  margin-top: auto;
+}
+
+.exampleLabel {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.exampleSnippet {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  color: #bbf7d0;
+  word-break: break-all;
+}
+
+/* ---------------- Responsive ---------------- */
+@media (max-width: 768px) {
+  .statusCard {
+    padding: 18px;
+  }
+
+  .statusCardHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .commandsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .codeDisplay {
+    letter-spacing: 4px;
+    font-size: 28px;
+    padding: 8px 16px;
+  }
 }
